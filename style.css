@@ -1,20 +1,25 @@
 :root {
-  color-scheme: light;
-  --bg: #f4f5f7;
-  --card: #ffffff;
-  --text: #1c1e21;
-  --muted: #6b7280;
-  --accent: #2563eb;
-  --accent-dark: #1d4ed8;
-  --border: #e5e7eb;
-  --danger: #dc2626;
+  color-scheme: dark;
+  --bg: #0b0b0d;
+  --card: #18181b;
+  --card-border: #2c2a24;
+  --text: #f2efe9;
+  --muted: #9a9690;
+  --accent: #e0b23d;
+  --accent-bright: #f4cc5d;
+  --accent-dark: #b8872a;
+  --border: #322f27;
+  --danger: #e5484d;
+  --heading-font: "Bebas Neue", "Arial Narrow", sans-serif;
 }
 
 * { box-sizing: border-box; }
 
 body {
   margin: 0;
-  background: var(--bg);
+  background:
+    radial-gradient(ellipse 900px 500px at 50% -10%, rgba(224, 178, 61, 0.16), transparent),
+    var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   line-height: 1.4;
@@ -26,13 +31,79 @@ body {
   padding: 24px 16px 64px;
 }
 
-h1 {
-  font-size: 1.6rem;
-  margin-bottom: 24px;
+.poster {
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 75% 15%, #211d12 0%, #08080a 65%);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 28px 24px 24px;
+  margin-bottom: 28px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+/* Subtilt rutmönster av kryss i bakgrunden - en nick till vattenmärket på
+   inspirationsbilden, inte en kopia av den. */
+.poster::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(45deg, transparent 47%, rgba(224, 178, 61, 0.1) 49%, rgba(224, 178, 61, 0.1) 51%, transparent 53%),
+    linear-gradient(-45deg, transparent 47%, rgba(224, 178, 61, 0.1) 49%, rgba(224, 178, 61, 0.1) 51%, transparent 53%);
+  background-size: 46px 46px;
+  pointer-events: none;
+}
+
+.poster-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.brand-badge {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #2a2a2e, #0a0a0b 70%);
+  border: 2px solid var(--accent);
+  box-shadow: 0 0 0 3px rgba(224, 178, 61, 0.15), 0 4px 14px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.brand-badge span {
+  font-family: var(--heading-font);
+  font-size: 1.5rem;
+  letter-spacing: 1px;
+  color: var(--accent-bright);
+}
+
+.brand-title {
+  font-family: var(--heading-font);
+  font-size: clamp(1.6rem, 6vw, 2rem);
+  line-height: 1.05;
+  letter-spacing: 1px;
+  margin: 0;
+  color: var(--accent-bright);
+  text-shadow: 0 2px 12px rgba(224, 178, 61, 0.25);
+}
+
+.brand-sub {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  letter-spacing: 0.3px;
 }
 
 h2 {
-  font-size: 1.15rem;
+  font-family: var(--heading-font);
+  font-size: 1.4rem;
+  letter-spacing: 0.5px;
+  color: var(--accent);
   margin: 0 0 4px;
 }
 
@@ -44,10 +115,11 @@ h3 {
 
 .card {
   background: var(--card);
-  border: 1px solid var(--border);
+  border: 1px solid var(--card-border);
   border-radius: 12px;
   padding: 20px;
   margin-bottom: 20px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
 .hint {
@@ -93,7 +165,18 @@ select {
   font-size: 0.95rem;
   font-family: inherit;
   color: var(--text);
-  background: #fff;
+  background: #101012;
+}
+
+input::placeholder {
+  color: #5c584f;
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(224, 178, 61, 0.2);
 }
 
 button {
@@ -101,23 +184,23 @@ button {
   border: none;
   border-radius: 8px;
   background: var(--accent);
-  color: #fff;
+  color: #1a1204;
   font-size: 0.9rem;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
 }
 
-button:hover { background: var(--accent-dark); }
+button:hover { background: var(--accent-bright); }
 
 button.secondary {
   background: transparent;
   color: var(--accent);
   border: 1px solid var(--accent);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 button.secondary:hover {
-  background: #eef2ff;
+  background: rgba(224, 178, 61, 0.12);
 }
 
 button.danger-link {
@@ -139,6 +222,44 @@ button.danger-link:hover { text-decoration: underline; background: none; }
 
 .exercise-row label { font-size: 0.75rem; }
 
+.autocomplete {
+  position: relative;
+}
+
+.ex-suggestions {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: #1f1e1a;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.ex-suggestions li {
+  padding: 7px 8px;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ex-suggestions li:hover {
+  background: rgba(224, 178, 61, 0.15);
+}
+
+.ex-suggestion-cat {
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
 .submit-row {
   margin-top: 16px;
 }
@@ -151,8 +272,8 @@ button.danger-link:hover { text-decoration: underline; background: none; }
 }
 
 .stat-pill {
-  background: #eef2ff;
-  color: var(--accent-dark);
+  background: rgba(224, 178, 61, 0.15);
+  color: var(--accent-bright);
   padding: 6px 12px;
   border-radius: 999px;
   font-size: 0.85rem;
@@ -172,7 +293,7 @@ th, td {
   vertical-align: top;
 }
 
-th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
+th { color: var(--accent); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.3px; }
 
 .empty {
   color: var(--muted);

@@ -1,15 +1,31 @@
-# Träningslogg
+# Pumping Iron Björkekärr – Träningslogg
 
 En enkel träningslogg-app som körs helt lokalt i webbläsaren. Ingen
-backend, inget byggsteg – öppna bara `index.html` i webbläsaren.
+backend, inget byggsteg – öppna bara `index.html` i webbläsaren. Byggd
+åt träningsgruppen "Pumping Iron Björkekärr (och Hisingen)".
 
-## Vad appen gör (v1 + v2 + v3)
+## Design/tema
+
+Mörkt tema i svart/guld, inspirerat av gruppens WhatsApp-ikon
+(bodybuilding-poster-känsla), men bygger **inte** på det faktiska
+upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
+är en egen komposition:
+
+- Rubrikfont: "Bebas Neue" (Google Fonts, laddas i `index.html`).
+- Färgpalett: se `:root`-variablerna i `style.css` (`--accent`/
+  `--accent-bright` = guld).
+- Headern (`.poster` i `style.css`) har en cirkulär "PI"-badge, titel
+  och undertext, ovanpå en mörk panel med ett subtilt guld-kryssmönster
+  (`.poster::before`) som en nick till vattenmärket på inspirationsbilden.
+
+## Vad appen gör (v1 + v2 + v3 + v4)
 
 - **Profil**: Namn, vikt (kg), längd (cm). Sparas lokalt och används för
   att räkna ut BMI och en uppskattning av kaloriförbrukning.
 - **Logga pass**: Datum, passtyp och pass-längd (minuter). Passtyper:
   - **Styrka**: man anger dessutom en lista av övningar (namn, vikt,
-    reps) – flera övningar kan läggas till i samma pass.
+    reps) – flera övningar kan läggas till i samma pass. Övningsnamnet
+    har sökförslag mot wger.de:s publika API (se **Övningssök** nedan).
   - **Löpning / Promenad / Cykling / Crosstrainer** (konditionspass):
     inga övningar/vikt/reps, istället anger man **tempo eller
     snitthastighet** för passet (se nedan), eftersom det gör stor
@@ -73,6 +89,34 @@ Två nycklar används:
 
   Detta är uppskattningar baserade på kända samband mellan fart och
   energiåtgång, inte exakta labbmätningar (ingen pulsdata används).
+
+## Övningssök (wger.de API)
+
+När man skriver i övningsnamnfältet (vid styrka) visas sökförslag från
+[wger.de](https://wger.de):s publika REST-API – inget konto/API-nyckel
+behövs. Klickar man på ett förslag fylls namnet i automatiskt.
+
+- **Endpoint**: `GET https://wger.de/api/v2/exerciseinfo/?name__search=<sökterm>&language__code=en,sv&limit=8&format=json`
+  (se `searchWgerExercises()` i `app.js`). `name__search` gör en
+  fulltext-/likhetssökning på wger-sidan (fungerar även med smärre
+  stavfel), och `language__code` begränsar träffarna till de exercises
+  som har en engelsk eller svensk översättning.
+- Sökningen körs debounced (300 ms efter senaste tangenttryckning, min.
+  2 tecken) och avbryter ev. tidigare pågående sökning
+  (`AbortController`) så gamla svar inte hinner "vinna" över nya.
+- **Språkval**: varje övning kan ha flera språköversättningar i svaret
+  (`translations`-listan). Vi väljer svenska (`language: 10`) om den
+  finns, annars engelska (`language: 2`) – aldrig något annat språk,
+  så listan inte blandar in tyska/franska/etc. namn.
+- **Viktigt att veta**: wger:s databas har väldigt få övningar med
+  svensk översättning (endast ett fåtal av totalt ~860 övningar, mot
+  nästan alla på engelska). I praktiken blir nästan alla sökförslag
+  därför på engelska – det är en begränsning i wger:s data, inte i vår
+  kod.
+- Fungerar bara med internetuppkoppling. Utan uppkoppling (eller om
+  wger.de är nere) visas helt enkelt inga förslag – man kan ändå skriva
+  in övningsnamnet fritt för hand precis som innan, det är aldrig ett
+  krav att välja ur listan.
 
 ## Filstruktur
 

@@ -150,6 +150,101 @@ document.getElementById("profile-form").addEventListener("submit", (e) => {
   renderHistory(); // kalorier per pass beror på profilens vikt
 });
 
+// ---------- Övningssök mot wger.dev (publikt API, ingen nyckel behövs) ----------
+
+// wger har väldigt få övningar med svensk översättning (bara ett fåtal av
+// totalt ~860), så i praktiken blir de allra flesta träffar engelska. Vi
+// frågar ändå efter båda språken och föredrar svenska när den finns, så
+// att man aldrig får tyska/franska/etc. namn i förslagslistan.
+const WGER_API_BASE = "https://wger.de/api/v2";
+const WGER_LANGUAGE_ID = { sv: 10, en: 2 };
+
+async function searchWgerExercises(term, signal) {
+  const url =
+    `${WGER_API_BASE}/exerciseinfo/?name__search=${encodeURIComponent(term)}` +
+    `&language__code=en,sv&limit=8&format=json`;
+
+  const res = await fetch(url, { signal });
+  if (!res.ok) throw new Error(`wger-sökning misslyckades (${res.status})`);
+  const data = await res.json();
+
+  return data.results
+    .map((ex) => {
+      const translations = ex.translations || [];
+      const swedish = translations.find((t) => t.language === WGER_LANGUAGE_ID.sv);
+      const english = translations.find((t) => t.language === WGER_LANGUAGE_ID.en);
+      const match = swedish || english;
+      if (!match) return null;
+      return { name: match.name, category: ex.category ? ex.category.name : "" };
+    })
+    .filter(Boolean);
+}
+
+function wireExerciseAutocomplete(input, list) {
+  let debounceTimer = null;
+  let controller = null;
+
+  function hideSuggestions() {
+    list.hidden = true;
+    list.innerHTML = "";
+  }
+
+  function renderSuggestions(term, results) {
+    // Om man hunnit skriva vidare (eller radera) innan svaret kom tillbaka
+    // ska det gamla svaret inte visas.
+    if (input.value.trim() !== term) return;
+
+    if (results.length === 0) {
+      hideSuggestions();
+      return;
+    }
+
+    list.innerHTML = results
+      .map(
+        (r, i) =>
+          `<li data-index="${i}">${r.name}${r.category ? ` <span class="ex-suggestion-cat">(${r.category})</span>` : ""}</li>`
+      )
+      .join("");
+    list.hidden = false;
+
+    list.querySelectorAll("li").forEach((li, i) => {
+      // mousedown (inte click) så den hinner köras innan inputens
+      // blur-händelse döljer listan.
+      li.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        input.value = results[i].name;
+        hideSuggestions();
+      });
+    });
+  }
+
+  input.addEventListener("input", () => {
+    const term = input.value.trim();
+    clearTimeout(debounceTimer);
+
+    if (term.length < 2) {
+      hideSuggestions();
+      return;
+    }
+
+    debounceTimer = setTimeout(() => {
+      if (controller) controller.abort();
+      controller = new AbortController();
+      searchWgerExercises(term, controller.signal)
+        .then((results) => renderSuggestions(term, results))
+        .catch((err) => {
+          if (err.name !== "AbortError") hideSuggestions();
+        });
+    }, 300);
+  });
+
+  input.addEventListener("blur", () => {
+    // Liten fördröjning så ett klick på ett förslag (mousedown ovan) hinner
+    // köras innan listan döljs.
+    setTimeout(hideSuggestions, 150);
+  });
+}
+
 // ---------- Nytt pass: dynamiska övningsrader ----------
 
 function addExerciseRow() {
@@ -159,7 +254,10 @@ function addExerciseRow() {
   row.innerHTML = `
     <label>
       Övning
-      <input type="text" class="ex-name" placeholder="T.ex. Bänkpress" required>
+      <div class="autocomplete">
+        <input type="text" class="ex-name" placeholder="T.ex. Bänkpress" autocomplete="off" required>
+        <ul class="ex-suggestions" hidden></ul>
+      </div>
     </label>
     <label>
       Vikt (kg)
@@ -172,6 +270,7 @@ function addExerciseRow() {
     <button type="button" class="secondary remove-row">✕</button>
   `;
   row.querySelector(".remove-row").addEventListener("click", () => row.remove());
+  wireExerciseAutocomplete(row.querySelector(".ex-name"), row.querySelector(".ex-suggestions"));
   container.appendChild(row);
 }
 
