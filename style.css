@@ -17,6 +17,9 @@
 
 body {
   margin: 0;
+  /* Skyddsnät: hela sidan ska aldrig scrolla i sidled, bara enskilda
+     containrar som `.table-scroll` som är gjorda för det. */
+  overflow-x: hidden;
   background:
     radial-gradient(ellipse 900px 500px at 50% -10%, rgba(224, 178, 61, 0.16), transparent),
     var(--bg);
@@ -147,6 +150,10 @@ label {
   font-size: 0.85rem;
   color: var(--muted);
   gap: 4px;
+  /* Utan denna krymper inte fältet under sitt naturliga textbredd-behov
+     när det sitter i ett grid (form-grid/exercise-row) - det tvingar
+     annars hela sidan bredare än skärmen på mobil. */
+  min-width: 0;
 }
 
 /* Utan denna regel vinner ovanstående "label { display: flex }" över
@@ -159,6 +166,8 @@ label[hidden] {
 
 input,
 select {
+  width: 100%;
+  min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
