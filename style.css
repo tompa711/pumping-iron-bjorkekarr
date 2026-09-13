@@ -60,7 +60,13 @@ h3 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
-  align-items: end;
+  align-items: start;
+}
+
+/* En knapp utan egen label-rubrik (t.ex. "Spara profil") ska ändå
+   linjera med botten av intilliggande fält, som har en rubrik ovanför. */
+.form-grid > button {
+  align-self: end;
 }
 
 label {
@@ -71,11 +77,21 @@ label {
   gap: 4px;
 }
 
-input {
+/* Utan denna regel vinner ovanstående "label { display: flex }" över
+   webbläsarens inbyggda regel för [hidden], eftersom författarens CSS
+   annars slår ut den generella dölj-regeln - även om elementet har
+   hidden-attributet satt förblir det synligt. */
+label[hidden] {
+  display: none;
+}
+
+input,
+select {
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: 8px;
   font-size: 0.95rem;
+  font-family: inherit;
   color: var(--text);
   background: #fff;
 }

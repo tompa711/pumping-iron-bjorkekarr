@@ -7,12 +7,71 @@
 const PROFILE_KEY = "traningslogg_profile";
 const SESSIONS_KEY = "traningslogg_sessions";
 
-// Antagande för kaloriberäkningen: styrketräning med måttlig-hög
-// intensitet motsvarar ungefär MET 5.0 (MET = "Metabolic Equivalent of
-// Task", ett standardmått för hur ansträngande en aktivitet är).
-// Formeln nedan (kcal/min = MET * 3.5 * kroppsvikt(kg) / 200) är en
-// vedertagen tumregelsformel, inte en exakt mätning.
-const MET_STRENGTH_TRAINING = 5.0;
+// Antagande för kaloriberäkningen: MET (Metabolic Equivalent of Task) är
+// ett standardmått för hur ansträngande en aktivitet är. Formeln nedan
+// (kcal/min = MET * 3.5 * kroppsvikt(kg) / 200) är en vedertagen
+// tumregelsformel, inte en exakt mätning.
+//
+// För konditionspass räknas MET ut från tempot (fart), eftersom det gör
+// stor skillnad om man t.ex. springer i 5 min/km eller 10 min/km. Vissa
+// typer anges som tempo i "min per km" (löpning, promenad, crosstrainer),
+// andra som snitthastighet i "km/h" (cykling) - det är så farten normalt
+// anges för respektive aktivitet.
+const SESSION_TYPE_LABELS = {
+  strength: "Styrka",
+  running: "Löpning",
+  walking: "Promenad",
+  cycling: "Cykling",
+  elliptical: "Crosstrainer",
+};
+
+// "minPerKm" = tempo anges i minuter per kilometer (lägre = snabbare).
+// "kmh" = fart anges direkt i km/h (högre = snabbare).
+const PACE_UNIT_BY_TYPE = {
+  running: "minPerKm",
+  walking: "minPerKm",
+  elliptical: "minPerKm",
+  cycling: "kmh",
+};
+
+const PACE_FIELD_BY_UNIT = {
+  minPerKm: { label: "Tempo (min/km)", placeholder: "T.ex. 5.5", step: "0.1", min: "2" },
+  kmh: { label: "Snitthastighet (km/h)", placeholder: "T.ex. 24", step: "0.5", min: "5" },
+};
+
+function paceToSpeedKmh(type, pace) {
+  const unit = PACE_UNIT_BY_TYPE[type];
+  if (!unit || !pace || pace <= 0) return 0;
+  return unit === "minPerKm" ? 60 / pace : pace;
+}
+
+// MET-formlerna nedan är förenklade approximationer baserade på kända
+// samband mellan fart och energiåtgång (ACSM:s formler för löpning/gång,
+// och ungefärliga MET-nivåer per hastighetsintervall för cykling), inte
+// exakta labbmätningar.
+function computeMET(type, pace) {
+  const speedKmh = paceToSpeedKmh(type, pace);
+
+  switch (type) {
+    case "running":
+      return speedKmh > 0 ? 0.9524 * speedKmh + 1 : 8.0;
+    case "walking":
+      return speedKmh > 0 ? 0.4762 * speedKmh + 1 : 3.5;
+    case "elliptical":
+      return speedKmh > 0 ? 0.7 * speedKmh + 2 : 5.0;
+    case "cycling": {
+      if (speedKmh <= 0) return 6.8;
+      if (speedKmh < 16) return 4.0;
+      if (speedKmh < 19) return 6.8;
+      if (speedKmh < 22) return 8.0;
+      if (speedKmh < 25) return 10.0;
+      if (speedKmh < 30) return 12.0;
+      return 15.8;
+    }
+    default:
+      return 5.0; // styrka
+  }
+}
 
 // ---------- Hjälpfunktioner: läsa/skriva localStorage ----------
 
@@ -48,8 +107,9 @@ function bmiCategory(bmi) {
   return "Fetma";
 }
 
-function computeCaloriesBurned(durationMin, weightKg) {
-  const kcalPerMin = (MET_STRENGTH_TRAINING * 3.5 * weightKg) / 200;
+function computeCaloriesBurned(durationMin, weightKg, type, pace) {
+  const met = computeMET(type, pace);
+  const kcalPerMin = (met * 3.5 * weightKg) / 200;
   return Math.round(kcalPerMin * durationMin);
 }
 
@@ -117,40 +177,135 @@ function addExerciseRow() {
 
 document.getElementById("add-exercise-row").addEventListener("click", addExerciseRow);
 
-// ---------- Spara pass ----------
+// ---------- Passtyp: visa/dölj övnings- och tempo-fälten ----------
+
+function updateSessionTypeUI() {
+  const type = document.getElementById("session-type").value;
+  const isStrength = type === "strength";
+  const paceUnit = PACE_UNIT_BY_TYPE[type];
+
+  document.getElementById("strength-section").hidden = !isStrength;
+  document.getElementById("pace-label").hidden = isStrength;
+
+  const paceInput = document.getElementById("session-pace");
+  if (paceUnit) {
+    const config = PACE_FIELD_BY_UNIT[paceUnit];
+    document.getElementById("pace-label-text").textContent = config.label;
+    paceInput.placeholder = config.placeholder;
+    paceInput.step = config.step;
+    paceInput.min = config.min;
+  }
+
+  // Dolda fält får inte vara "required" - annars vägrar webbläsaren
+  // skicka formuläret utan att visa något felmeddelande alls, eftersom
+  // den inte kan visa valideringsbubblan på ett dolt fält.
+  document.querySelectorAll("#exercise-rows .ex-name").forEach((input) => {
+    input.required = isStrength;
+  });
+  paceInput.required = !isStrength;
+}
+
+document.getElementById("session-type").addEventListener("change", updateSessionTypeUI);
+
+// ---------- Formulär-läge: nytt pass vs. redigera pass ----------
+
+function resetSessionForm() {
+  document.getElementById("session-form").reset();
+  document.getElementById("session-editing-id").value = "";
+  document.getElementById("exercise-rows").innerHTML = "";
+  addExerciseRow();
+  updateSessionTypeUI();
+  document.getElementById("session-date").valueAsDate = new Date();
+  document.getElementById("session-form-title").textContent = "Logga nytt pass";
+  document.getElementById("session-submit-btn").textContent = "Spara pass";
+  document.getElementById("cancel-edit-btn").hidden = true;
+}
+
+function startEditingSession(id) {
+  const session = loadSessions().find((s) => s.id === id);
+  if (!session) return;
+
+  document.getElementById("session-editing-id").value = session.id;
+  document.getElementById("session-type").value = session.type || "strength";
+  document.getElementById("session-date").value = session.date;
+  document.getElementById("session-duration").value = session.durationMin;
+  document.getElementById("session-pace").value = session.pace || "";
+
+  document.getElementById("exercise-rows").innerHTML = "";
+  if (session.exercises.length > 0) {
+    session.exercises.forEach((ex) => {
+      addExerciseRow();
+      const row = document.getElementById("exercise-rows").lastElementChild;
+      row.querySelector(".ex-name").value = ex.name;
+      row.querySelector(".ex-weight").value = ex.weight;
+      row.querySelector(".ex-reps").value = ex.reps;
+    });
+  } else {
+    addExerciseRow();
+  }
+
+  updateSessionTypeUI();
+  document.getElementById("session-form-title").textContent = "Redigera pass";
+  document.getElementById("session-submit-btn").textContent = "Uppdatera pass";
+  document.getElementById("cancel-edit-btn").hidden = false;
+  document.getElementById("session-form").scrollIntoView({ behavior: "smooth" });
+}
+
+document.getElementById("cancel-edit-btn").addEventListener("click", resetSessionForm);
+
+// ---------- Spara / uppdatera pass ----------
 
 document.getElementById("session-form").addEventListener("submit", (e) => {
   e.preventDefault();
 
+  const editingId = document.getElementById("session-editing-id").value;
+  const type = document.getElementById("session-type").value;
   const date = document.getElementById("session-date").value;
   const durationMin = parseFloat(document.getElementById("session-duration").value);
 
-  const exercises = [];
-  document.querySelectorAll("#exercise-rows .exercise-row").forEach((row) => {
-    const name = row.querySelector(".ex-name").value.trim();
-    const weight = parseFloat(row.querySelector(".ex-weight").value) || 0;
-    const reps = parseInt(row.querySelector(".ex-reps").value, 10) || 0;
-    if (name) exercises.push({ name, weight, reps });
-  });
+  let exercises = [];
+  let pace = null;
 
-  if (exercises.length === 0) {
-    alert("Lägg till minst en övning innan du sparar passet.");
-    return;
+  if (type === "strength") {
+    document.querySelectorAll("#exercise-rows .exercise-row").forEach((row) => {
+      const name = row.querySelector(".ex-name").value.trim();
+      const weight = parseFloat(row.querySelector(".ex-weight").value) || 0;
+      const reps = parseInt(row.querySelector(".ex-reps").value, 10) || 0;
+      if (name) exercises.push({ name, weight, reps });
+    });
+
+    if (exercises.length === 0) {
+      alert("Lägg till minst en övning innan du sparar passet.");
+      return;
+    }
+  } else {
+    pace = parseFloat(document.getElementById("session-pace").value);
+    if (!pace || pace <= 0) {
+      alert("Ange tempo/snitthastighet innan du sparar passet.");
+      return;
+    }
   }
 
   const sessions = loadSessions();
-  sessions.push({
-    id: Date.now(),
-    date,
-    durationMin,
-    exercises,
-  });
+
+  if (editingId) {
+    const idx = sessions.findIndex((s) => s.id === Number(editingId));
+    if (idx !== -1) {
+      sessions[idx] = { ...sessions[idx], type, date, durationMin, exercises, pace };
+    }
+  } else {
+    sessions.push({
+      id: Date.now(),
+      type,
+      date,
+      durationMin,
+      exercises,
+      pace,
+    });
+  }
+
   saveSessions(sessions);
-
-  e.target.reset();
-  document.getElementById("exercise-rows").innerHTML = "";
-  addExerciseRow();
-
+  resetSessionForm();
   renderHistory();
 });
 
@@ -174,22 +329,36 @@ function renderHistory() {
 
   const rows = sessions
     .map((s) => {
-      const exList = s.exercises
-        .map((ex) => `<li>${ex.name}: ${ex.weight} kg × ${ex.reps} reps</li>`)
-        .join("");
+      const type = s.type || "strength";
+      const details =
+        type === "strength"
+          ? `<ul class="ex-list">${s.exercises
+              .map((ex) => `<li>${ex.name}: ${ex.weight} kg × ${ex.reps} reps</li>`)
+              .join("")}</ul>`
+          : "–";
+
+      const paceUnit = PACE_UNIT_BY_TYPE[type];
+      const pace = paceUnit
+        ? `${s.pace ?? "–"} ${paceUnit === "minPerKm" ? "min/km" : "km/h"}`
+        : "–";
 
       let calories = "–";
       if (profile && profile.weightKg) {
-        calories = `${computeCaloriesBurned(s.durationMin, profile.weightKg)} kcal`;
+        calories = `${computeCaloriesBurned(s.durationMin, profile.weightKg, type, s.pace)} kcal`;
       }
 
       return `
         <tr>
           <td>${s.date}</td>
+          <td>${SESSION_TYPE_LABELS[type] || type}</td>
           <td>${s.durationMin} min</td>
-          <td><ul class="ex-list">${exList}</ul></td>
+          <td>${pace}</td>
+          <td>${details}</td>
           <td>${calories}</td>
-          <td><button class="danger-link" data-id="${s.id}">Ta bort</button></td>
+          <td>
+            <button class="secondary edit-link" data-id="${s.id}">Redigera</button>
+            <button class="danger-link" data-id="${s.id}">Ta bort</button>
+          </td>
         </tr>
       `;
     })
@@ -200,7 +369,9 @@ function renderHistory() {
       <thead>
         <tr>
           <th>Datum</th>
+          <th>Typ</th>
           <th>Längd</th>
+          <th>Tempo/fart</th>
           <th>Övningar</th>
           <th>Kalorier (uppskattat)</th>
           <th></th>
@@ -213,12 +384,14 @@ function renderHistory() {
   el.querySelectorAll(".danger-link").forEach((btn) => {
     btn.addEventListener("click", () => deleteSession(Number(btn.dataset.id)));
   });
+  el.querySelectorAll(".edit-link").forEach((btn) => {
+    btn.addEventListener("click", () => startEditingSession(Number(btn.dataset.id)));
+  });
 }
 
 // ---------- Init ----------
 
 fillProfileForm();
 renderProfileStats();
-addExerciseRow(); // starta med en tom övningsrad
+resetSessionForm(); // sätter startläge: tom övningsrad, dagens datum, "styrka" synlig
 renderHistory();
-document.getElementById("session-date").valueAsDate = new Date();

@@ -32,11 +32,22 @@
       <div id="profile-stats" class="stats"></div>
     </section>
 
-    <!-- ===== NYTT PASS ===== -->
+    <!-- ===== NYTT / REDIGERA PASS ===== -->
     <section class="card">
-      <h2>Logga nytt pass</h2>
+      <h2 id="session-form-title">Logga nytt pass</h2>
       <form id="session-form">
+        <input type="hidden" id="session-editing-id">
         <div class="form-grid">
+          <label>
+            Passtyp
+            <select id="session-type">
+              <option value="strength">Styrka</option>
+              <option value="running">Löpning</option>
+              <option value="walking">Promenad</option>
+              <option value="cycling">Cykling</option>
+              <option value="elliptical">Crosstrainer</option>
+            </select>
+          </label>
           <label>
             Datum
             <input type="date" id="session-date" required>
@@ -45,14 +56,21 @@
             Pass-längd (minuter)
             <input type="number" id="session-duration" min="1" max="600" placeholder="T.ex. 60" required>
           </label>
+          <label id="pace-label">
+            <span id="pace-label-text">Tempo (min/km)</span>
+            <input type="number" id="session-pace" min="1" step="0.1" placeholder="T.ex. 5.5">
+          </label>
         </div>
 
-        <h3>Övningar i passet</h3>
-        <div id="exercise-rows"></div>
-        <button type="button" id="add-exercise-row" class="secondary">+ Lägg till övning</button>
+        <div id="strength-section">
+          <h3>Övningar i passet</h3>
+          <div id="exercise-rows"></div>
+          <button type="button" id="add-exercise-row" class="secondary">+ Lägg till övning</button>
+        </div>
 
         <div class="submit-row">
-          <button type="submit">Spara pass</button>
+          <button type="submit" id="session-submit-btn">Spara pass</button>
+          <button type="button" id="cancel-edit-btn" class="secondary" hidden>Avbryt redigering</button>
         </div>
       </form>
     </section>
