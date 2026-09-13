@@ -222,6 +222,18 @@ button.danger-link:hover { text-decoration: underline; background: none; }
 
 .exercise-row label { font-size: 0.75rem; }
 
+/* På smala skärmar (mobil) blir 4 fasta kolumner för trångt - låt
+   övningsnamnet ta en egen rad ovanför vikt/reps/ta bort-knappen. */
+@media (max-width: 480px) {
+  .exercise-row {
+    grid-template-columns: 1fr 1fr auto;
+  }
+
+  .exercise-row label:first-child {
+    grid-column: 1 / -1;
+  }
+}
+
 .autocomplete {
   position: relative;
 }
@@ -280,8 +292,13 @@ button.danger-link:hover { text-decoration: underline; background: none; }
   font-weight: 600;
 }
 
+.table-scroll {
+  overflow-x: auto;
+}
+
 table {
   width: 100%;
+  min-width: 640px;
   border-collapse: collapse;
   font-size: 0.9rem;
 }

@@ -464,20 +464,22 @@ function renderHistory() {
     .join("");
 
   el.innerHTML = `
-    <table>
-      <thead>
-        <tr>
-          <th>Datum</th>
-          <th>Typ</th>
-          <th>Längd</th>
-          <th>Tempo/fart</th>
-          <th>Övningar</th>
-          <th>Kalorier (uppskattat)</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Typ</th>
+            <th>Längd</th>
+            <th>Tempo/fart</th>
+            <th>Övningar</th>
+            <th>Kalorier (uppskattat)</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
   `;
 
   el.querySelectorAll(".danger-link").forEach((btn) => {
