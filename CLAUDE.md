@@ -115,9 +115,9 @@ CRUD går via: `loadProfile()`, `saveProfile()`, `loadSessions()`,
 - **Bibliotek**: `@supabase/supabase-js` laddas via CDN
   (jsdelivr, pinnad version) i `index.html` - inget npm/byggsteg.
 - **Inloggning**: mejl + lösenord (`supabaseClient.auth.signInWithPassword` /
-  `.signUp`), med separata formulär för inloggning och registrering på
-  samma sida (`#login-view`/`#signup-view` i `index.html`, växlas via
-  `showLoginView()`/`showSignupView()` i `app.js`).
+  `.signUp`), med tre formulär på samma sida inuti `#auth-logged-out`:
+  `#login-view`, `#signup-view` och `#forgot-view` (glömt lösenord),
+  växlade via `setAuthView("login" | "signup" | "forgot")` i `app.js`.
   - Lösenord kräver minst 6 tecken (`minlength="6"` client-side, samma
     minimum som Supabase Auth har som default).
   - Om **e-postbekräftelse** är påslaget i projektet (default för nya
@@ -129,6 +129,18 @@ CRUD går via: `loadProfile()`, `saveProfile()`, `loadSessions()`,
     svarar Supabase utan fel men med en tom `identities`-lista (skydd
     mot att kunna leta reda på registrerade mejladresser) - det
     hanteras i `signup-form`-hanteraren och visar "logga in istället".
+- **Glömt lösenord**: `#forgot-view` skickar
+  `supabaseClient.auth.resetPasswordForEmail(email, { redirectTo })`.
+  Klickar man på länken i mejlet fyrar Supabase eventet
+  `"PASSWORD_RECOVERY"` i `onAuthStateChange` (med en tillfällig
+  session) - då visas kortet `#recovery-view` ("Välj nytt lösenord",
+  styrt av flaggan `inPasswordRecovery` i `app.js`) istället för att
+  släppa in i appen direkt på den tillfälliga sessionen. Nytt lösenord
+  sparas via `supabaseClient.auth.updateUser({ password })`.
+  - Skickar **alltid** ett mejl (går inte att stänga av som för
+    inloggning), så samma Supabase-mejlgräns (2/timme utan egen SMTP,
+    se nedan) gäller även här - men det är en sällan använd funktion så
+    det är sällan ett problem i praktiken.
 - **Projekt**: `https://qnezslbbmfsdhsaiuesf.supabase.co`. `anon`-nyckeln
   ligger hårdkodad i `app.js` - det är avsiktligt och säkert **så länge
   RLS-policyn nedan är aktiv**: anon-nyckeln ger bara åtkomst till rader
@@ -181,9 +193,9 @@ create policy "Users manage their own sessions"
 
 - **Authentication → URL Configuration**: lägg till appens
   GitHub Pages-URL (`https://tompa711.github.io/pumping-iron-bjorkekarr/`)
-  som både **Site URL** och i listan **Redirect URLs**. Behövs bara om
-  e-postbekräftelse är påslaget (se ovan) - annars skickas ingen
-  bekräftelselänk alls.
+  som både **Site URL** och i listan **Redirect URLs**. Krävs för
+  "glömt lösenord"-länken (alltid), och för bekräftelselänken vid
+  registrering om e-postbekräftelse är påslaget (se nedan).
 - **Authentication → Providers → Email → "Confirm email"**: avstängt
   gör att man loggas in direkt efter registrering (inget mejl skickas
   alls då, vilket också undviker Supabase inbyggda mejlgräns på

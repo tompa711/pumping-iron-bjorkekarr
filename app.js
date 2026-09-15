@@ -216,27 +216,46 @@ function computeCaloriesBurned(durationMin, weightKg, type, pace) {
 
 // ---------- Konto: inloggning/registrering (mejl + lösenord), UI-läge ----------
 
+// Växlar mellan de tre vyerna inuti #auth-logged-out: "login", "signup",
+// "forgot" (begär återställningslänk).
+function setAuthView(view) {
+  document.getElementById("login-view").hidden = view !== "login";
+  document.getElementById("signup-view").hidden = view !== "signup";
+  document.getElementById("forgot-view").hidden = view !== "forgot";
+  document.getElementById("login-status").textContent = "";
+  document.getElementById("signup-status").textContent = "";
+  document.getElementById("forgot-status").textContent = "";
+}
+
 function showLoginView() {
-  document.getElementById("login-view").hidden = false;
-  document.getElementById("signup-view").hidden = true;
-  document.getElementById("login-status").textContent = "";
-  document.getElementById("signup-status").textContent = "";
+  setAuthView("login");
 }
 
-function showSignupView() {
-  document.getElementById("login-view").hidden = true;
-  document.getElementById("signup-view").hidden = false;
-  document.getElementById("login-status").textContent = "";
-  document.getElementById("signup-status").textContent = "";
-}
+document.getElementById("show-signup").addEventListener("click", () => setAuthView("signup"));
+document.getElementById("show-login").addEventListener("click", () => setAuthView("login"));
+document.getElementById("show-forgot").addEventListener("click", () => setAuthView("forgot"));
+document.getElementById("show-login-from-forgot").addEventListener("click", () => setAuthView("login"));
 
-document.getElementById("show-signup").addEventListener("click", showSignupView);
-document.getElementById("show-login").addEventListener("click", showLoginView);
+// Sant mellan att man klickat på återställningslänken i mejlet och att man
+// faktiskt satt ett nytt lösenord - visar då "Välj nytt lösenord"-kortet
+// istället för att släppa in i appen på den tillfälliga recovery-sessionen.
+let inPasswordRecovery = false;
 
 function updateAuthUI() {
   const loggedOut = document.getElementById("auth-logged-out");
   const loggedIn = document.getElementById("auth-logged-in");
   const appContent = document.getElementById("app-content");
+  const recovery = document.getElementById("recovery-view");
+
+  if (inPasswordRecovery) {
+    loggedOut.hidden = true;
+    loggedIn.hidden = true;
+    appContent.hidden = true;
+    recovery.hidden = false;
+    return;
+  }
+
+  recovery.hidden = true;
 
   if (currentUser) {
     loggedOut.hidden = true;
@@ -319,6 +338,46 @@ document.getElementById("signup-form").addEventListener("submit", async (e) => {
 
 document.getElementById("sign-out-btn").addEventListener("click", async () => {
   await supabaseClient?.auth.signOut();
+});
+
+document.getElementById("forgot-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("forgot-status");
+
+  if (!supabaseClient) {
+    statusEl.textContent = "Kunde inte ladda funktionen (kolla internetuppkopplingen och ladda om sidan).";
+    return;
+  }
+
+  const email = document.getElementById("forgot-email").value.trim();
+  statusEl.textContent = "Skickar länk …";
+
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + window.location.pathname,
+  });
+
+  statusEl.textContent = error
+    ? `Något gick fel: ${error.message}`
+    : "Länk skickad! Kolla din mejl och klicka på länken för att välja ett nytt lösenord.";
+});
+
+document.getElementById("reset-password-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("reset-password-status");
+  const newPassword = document.getElementById("reset-password-new").value;
+
+  const { error } = await supabaseClient.auth.updateUser({ password: newPassword });
+
+  if (error) {
+    statusEl.textContent = `Något gick fel: ${error.message}`;
+    return;
+  }
+
+  document.getElementById("reset-password-new").value = "";
+  inPasswordRecovery = false;
+  updateAuthUI();
+  await refreshProfileUI();
+  await refreshHistoryUI();
 });
 
 // ---------- Profil: rendering & events ----------
@@ -972,12 +1031,23 @@ resetSessionForm(); // sätter startläge: tom övningsrad, dagens datum, "styrk
 // onAuthStateChange fyrar ett "INITIAL_SESSION"-event direkt vid start
 // (med ev. redan inloggad session), och sedan "SIGNED_IN"/"SIGNED_OUT" när
 // man loggar in/ut - inklusive om e-postbekräftelse är påslaget och man
-// klickar på bekräftelselänken i mejlet och kommer tillbaka hit. Det är
-// alltså den enda platsen vi behöver trigga om profil/historik ska
-// laddas om.
+// klickar på bekräftelselänken i mejlet och kommer tillbaka hit.
+// "PASSWORD_RECOVERY" fyrar när man klickar på återställningslänken för
+// glömt lösenord - då visas "Välj nytt lösenord"-kortet istället för att
+// släppa in i appen på den tillfälliga recovery-sessionen (se
+// updateAuthUI()). Det här är alltså den enda platsen vi behöver trigga
+// om profil/historik ska laddas om.
 supabaseClient?.auth.onAuthStateChange(async (event, session) => {
   currentUser = session ? session.user : null;
+
+  if (event === "PASSWORD_RECOVERY") {
+    inPasswordRecovery = true;
+  }
+
   updateAuthUI();
-  await refreshProfileUI();
-  await refreshHistoryUI();
+
+  if (!inPasswordRecovery) {
+    await refreshProfileUI();
+    await refreshHistoryUI();
+  }
 });

@@ -46,6 +46,8 @@
           <p class="hint">
             Inget konto än?
             <button type="button" id="show-signup" class="link-btn">Registrera dig</button>
+            &middot;
+            <button type="button" id="show-forgot" class="link-btn">Glömt lösenord?</button>
           </p>
         </div>
 
@@ -68,6 +70,22 @@
             <button type="button" id="show-login" class="link-btn">Logga in</button>
           </p>
         </div>
+
+        <div id="forgot-view" hidden>
+          <p class="hint">Ange din mejl så skickar vi en länk för att välja ett nytt lösenord.</p>
+          <form id="forgot-form" class="form-grid">
+            <label>
+              E-post
+              <input type="email" id="forgot-email" placeholder="din@mejl.se" required>
+            </label>
+            <button type="submit">Skicka återställningslänk</button>
+          </form>
+          <p id="forgot-status" class="hint"></p>
+          <p class="hint">
+            Kom du på det igen?
+            <button type="button" id="show-login-from-forgot" class="link-btn">Logga in</button>
+          </p>
+        </div>
       </div>
 
       <div id="auth-logged-in" hidden>
@@ -77,6 +95,20 @@
         </p>
         <button type="button" id="sign-out-btn" class="secondary">Logga ut</button>
       </div>
+    </section>
+
+    <!-- ===== SÄTT NYTT LÖSENORD (efter klick på återställningslänk i mejlet) ===== -->
+    <section class="card" id="recovery-view" hidden>
+      <h2>Välj nytt lösenord</h2>
+      <p class="hint">Ange ett nytt lösenord (minst 6 tecken) för ditt konto.</p>
+      <form id="reset-password-form" class="form-grid">
+        <label>
+          Nytt lösenord
+          <input type="password" id="reset-password-new" minlength="6" required>
+        </label>
+        <button type="submit">Spara nytt lösenord</button>
+      </form>
+      <p id="reset-password-status" class="hint"></p>
     </section>
 
     <div id="app-content" hidden>
