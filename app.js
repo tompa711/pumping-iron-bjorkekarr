@@ -770,6 +770,67 @@ function computePersonalRecords(sessions) {
     .sort((a, b) => a.name.localeCompare(b.name, "sv"));
 }
 
+// Antal dagar sedan det senast loggade passet (vilken passtyp som helst).
+// Räknat på datum, inte klockslag - "idag" ger 0.
+function computeDaysSinceLastSession(sessions) {
+  if (sessions.length === 0) return null;
+
+  const latestDate = sessions.reduce((latest, s) => (s.date > latest ? s.date : latest), sessions[0].date);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  return Math.round((new Date(todayStr) - new Date(latestDate)) / (24 * 3600 * 1000));
+}
+
+// Antal veckor i rad (bakåt från nuvarande vecka) med minst 3 pass
+// (vilken passtyp som helst). Om nuvarande vecka ännu inte nått 3 pass
+// räknas den inte in än (den är inte "bruten", bara inte klar), och
+// räkningen börjar då från senast avslutade vecka istället.
+function computeWeeklyStreak(sessions) {
+  const countByWeekKey = new Map();
+  sessions.forEach((s) => {
+    const key = getMonday(s.date).toISOString().slice(0, 10);
+    countByWeekKey.set(key, (countByWeekKey.get(key) || 0) + 1);
+  });
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const currentMonday = getMonday(todayStr);
+  const currentKey = currentMonday.toISOString().slice(0, 10);
+  const currentCount = countByWeekKey.get(currentKey) || 0;
+
+  const cursor = new Date(currentMonday);
+  if (currentCount < 3) {
+    cursor.setDate(cursor.getDate() - 7); // hoppa till förra veckan
+  }
+
+  let streak = 0;
+  while ((countByWeekKey.get(cursor.toISOString().slice(0, 10)) || 0) >= 3) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 7);
+  }
+
+  return streak;
+}
+
+function renderRestDayCounter(sessions) {
+  const valueEl = document.getElementById("rest-days-value");
+  const labelEl = document.getElementById("rest-days-label");
+  const days = computeDaysSinceLastSession(sessions);
+
+  if (days === null) {
+    valueEl.textContent = "–";
+    labelEl.textContent = "Inga pass loggade än";
+  } else if (days <= 0) {
+    valueEl.textContent = "0";
+    labelEl.textContent = "dagar sedan senaste passet - snyggt! 💪";
+  } else {
+    valueEl.textContent = days;
+    labelEl.textContent = days === 1 ? "dag sedan senaste passet" : "dagar sedan senaste passet";
+  }
+}
+
+function renderStreakCounter(sessions) {
+  document.getElementById("streak-value").textContent = computeWeeklyStreak(sessions);
+}
+
 // Senast loggade vikt/reps per övningsnamn, används för att auto-fylla
 // övningsraderna. `sessions` kommer redan sorterad nyast->äldst från
 // loadSessions(), så första träffen per namn är den senaste.
@@ -894,6 +955,8 @@ let lastExerciseStatsByName = new Map();
 async function refreshHistoryUI() {
   const [sessions, profile] = await Promise.all([loadSessions(), loadProfile()]);
   lastExerciseStatsByName = computeLastExerciseStats(sessions);
+  renderRestDayCounter(sessions);
+  renderStreakCounter(sessions);
   renderHistory(sessions, profile);
   renderStatistics(sessions, profile);
 }

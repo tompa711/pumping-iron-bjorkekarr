@@ -27,6 +27,13 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
 - **Inloggning krävs**: appen visar bara inloggnings-/
   registreringsformulär (mejl + lösenord) tills man är inloggad. Resten
   av appen (`#app-content` i `index.html`) är dold fram tills dess.
+- **Snabbstatistik** (överst i appen, direkt under inloggningen):
+  - **Dagar sedan senaste passet** (vilken passtyp som helst).
+  - **Veckostreak**: antal veckor i rad med minst 3 pass. Nuvarande
+    (ej avslutade) vecka räknas bara in om den redan nått 3 pass -
+    annars påverkar den varken till eller från, och räkningen utgår
+    från senast avslutade vecka istället (se `computeWeeklyStreak()`
+    i `app.js` för exakt logik).
 - **Profil**: Namn, vikt (kg), längd (cm). Sparas i molnet och används
   för att räkna ut BMI och en uppskattning av kaloriförbrukning.
 - **Logga pass**: Datum, passtyp och pass-längd (minuter). Passtyper:
