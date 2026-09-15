@@ -57,19 +57,26 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   vikt, passets längd och en MET-nivå som räknas ut från tempot/farten
   för konditionspass). Man kan ta bort enskilda pass.
 - **Statistik**: Ett eget kort under historiken med
-  - **Volym per vecka** (styrkepass): summan av vikt × reps för alla
-    övningar, grupperat per kalendervecka (måndag-baserad, ISO-
-    veckonummer som etikett), visat som ett enkelt stapeldiagram i ren
-    CSS/HTML (ingen chart-bibliotek). Visar bara de senaste 12 veckorna
-    **som faktiskt har loggade styrkepass** - hopp i tränings-glesa
-    perioder visas inte som nollstaplar.
-  - **Personliga rekord**: en tabell per övningsnamn med högsta vikt
-    någonsin loggad och högsta volym i ett enskilt set (vikt × reps)
-    någonsin loggad. Övningsnamn matchas exakt (skiftlägeskänsligt för
-    visning, men grupperas skiftlägesokänsligt).
-  - Beräknas client-side i `app.js` (`computeWeeklyVolume()`,
-    `computePersonalRecords()`) från samma sessionsdata som historiken,
-    ingen extra Supabase-fråga.
+  - **Tränade minuter per vecka**: summan av pass-längd för **alla**
+    pass (styrka + kondition), grupperat per kalendervecka
+    (måndag-baserad, ISO-veckonummer som etikett).
+  - **Förbrukade kalorier per vecka**: summan av uppskattad
+    kaloriförbrukning (samma beräkning som i historiken) för alla pass,
+    per vecka. Kräver att profilens vikt är ifylld - annars visas en
+    uppmaning om det istället för grafen.
+  - Båda graferna visas som enkla stapeldiagram i ren CSS/HTML (ingen
+    chart-bibliotek), och visar bara de senaste 12 veckorna **som
+    faktiskt har loggade pass** - hopp i tränings-glesa perioder visas
+    inte som nollstaplar. Delar samma vecko-grupperingslogik
+    (`computeWeeklyAggregate()` i `app.js`, tar en `valueFn` per
+    graf-typ) och samma återanvändbara rendering
+    (`renderWeeklyBarChart()`).
+  - **Personliga rekord**: en tabell per övningsnamn (bara styrkepass)
+    med högsta vikt någonsin loggad och högsta volym i ett enskilt set
+    (vikt × reps) någonsin loggad. Övningsnamn matchas exakt
+    (skiftlägeskänsligt för visning, men grupperas skiftlägesokänsligt).
+  - Allt beräknas client-side i `app.js` från samma sessionsdata som
+    historiken, ingen extra Supabase-fråga.
 
 ## Datalagring: allt i Supabase
 

@@ -703,7 +703,7 @@ function renderHistory(allSessions, profile) {
   });
 }
 
-// ---------- Statistik: volym per vecka & personliga rekord ----------
+// ---------- Statistik: minuter/kalorier per vecka & personliga rekord ----------
 
 // Måndagen (lokal midnatt) i veckan som ett datum tillhör.
 function getMonday(dateStr) {
@@ -724,24 +724,23 @@ function formatWeekLabel(monday) {
   return `v.${weekNumber}`;
 }
 
-function computeWeeklyVolume(sessions) {
-  const byWeek = new Map(); // "YYYY-MM-DD" (måndag) -> { monday, volume }
+// Grupperar ALLA pass (styrka + kondition) per vecka och summerar ett
+// värde per pass (t.ex. längd eller kalorier) - `valueFn(session)`.
+function computeWeeklyAggregate(sessions, valueFn) {
+  const byWeek = new Map(); // "YYYY-MM-DD" (måndag) -> { monday, value }
 
-  sessions
-    .filter((s) => (s.type || "strength") === "strength")
-    .forEach((s) => {
-      const monday = getMonday(s.date);
-      const key = monday.toISOString().slice(0, 10);
-      const volume = s.exercises.reduce((sum, ex) => sum + ex.weight * ex.reps, 0);
-      const entry = byWeek.get(key) || { monday, volume: 0 };
-      entry.volume += volume;
-      byWeek.set(key, entry);
-    });
+  sessions.forEach((s) => {
+    const monday = getMonday(s.date);
+    const key = monday.toISOString().slice(0, 10);
+    const entry = byWeek.get(key) || { monday, value: 0 };
+    entry.value += valueFn(s);
+    byWeek.set(key, entry);
+  });
 
   return Array.from(byWeek.values())
     .sort((a, b) => a.monday - b.monday)
-    .slice(-12) // senaste 12 veckorna med loggade styrkepass
-    .map((entry) => ({ label: formatWeekLabel(entry.monday), volume: Math.round(entry.volume) }));
+    .slice(-12) // senaste 12 veckorna med loggade pass
+    .map((entry) => ({ label: formatWeekLabel(entry.monday), value: Math.round(entry.value) }));
 }
 
 function computePersonalRecords(sessions) {
@@ -792,16 +791,15 @@ function computeLastExerciseStats(sessions) {
   return map;
 }
 
-function renderWeeklyVolumeChart(sessions) {
-  const el = document.getElementById("weekly-volume-chart");
-  const weeks = computeWeeklyVolume(sessions);
+function renderWeeklyBarChart(elementId, weeks, emptyMessage, formatValue) {
+  const el = document.getElementById(elementId);
 
   if (weeks.length === 0) {
-    el.innerHTML = `<p class="empty">Inga styrkepass loggade ännu.</p>`;
+    el.innerHTML = `<p class="empty">${emptyMessage}</p>`;
     return;
   }
 
-  const maxVolume = Math.max(...weeks.map((w) => w.volume), 1);
+  const maxValue = Math.max(...weeks.map((w) => w.value), 1);
 
   el.innerHTML = `
     <div class="volume-chart">
@@ -809,8 +807,8 @@ function renderWeeklyVolumeChart(sessions) {
         .map(
           (w) => `
             <div class="volume-chart-col">
-              <div class="volume-chart-value">${w.volume.toLocaleString("sv-SE")}</div>
-              <div class="volume-chart-bar" style="height: ${Math.max((w.volume / maxVolume) * 100, 3)}%"></div>
+              <div class="volume-chart-value">${formatValue(w.value)}</div>
+              <div class="volume-chart-bar" style="height: ${Math.max((w.value / maxValue) * 100, 3)}%"></div>
               <div class="volume-chart-label">${w.label}</div>
             </div>
           `
@@ -818,6 +816,34 @@ function renderWeeklyVolumeChart(sessions) {
         .join("")}
     </div>
   `;
+}
+
+function renderWeeklyMinutesChart(sessions) {
+  const weeks = computeWeeklyAggregate(sessions, (s) => s.durationMin);
+  renderWeeklyBarChart(
+    "weekly-minutes-chart",
+    weeks,
+    "Inga pass loggade ännu.",
+    (v) => `${v.toLocaleString("sv-SE")} min`
+  );
+}
+
+function renderWeeklyCaloriesChart(sessions, profile) {
+  if (!profile || !profile.weightKg) {
+    document.getElementById("weekly-calories-chart").innerHTML =
+      `<p class="empty">Fyll i din vikt under "Din profil" för att se förbrukade kalorier per vecka.</p>`;
+    return;
+  }
+
+  const weeks = computeWeeklyAggregate(sessions, (s) =>
+    computeCaloriesBurned(s.durationMin, profile.weightKg, s.type || "strength", s.pace)
+  );
+  renderWeeklyBarChart(
+    "weekly-calories-chart",
+    weeks,
+    "Inga pass loggade ännu.",
+    (v) => `${v.toLocaleString("sv-SE")} kcal`
+  );
 }
 
 function renderPersonalRecords(sessions) {
@@ -857,8 +883,9 @@ function renderPersonalRecords(sessions) {
   `;
 }
 
-function renderStatistics(sessions) {
-  renderWeeklyVolumeChart(sessions);
+function renderStatistics(sessions, profile) {
+  renderWeeklyMinutesChart(sessions);
+  renderWeeklyCaloriesChart(sessions, profile);
   renderPersonalRecords(sessions);
 }
 
@@ -868,7 +895,7 @@ async function refreshHistoryUI() {
   const [sessions, profile] = await Promise.all([loadSessions(), loadProfile()]);
   lastExerciseStatsByName = computeLastExerciseStats(sessions);
   renderHistory(sessions, profile);
-  renderStatistics(sessions);
+  renderStatistics(sessions, profile);
 }
 
 // ---------- Init ----------
