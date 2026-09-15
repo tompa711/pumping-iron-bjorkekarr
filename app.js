@@ -1,15 +1,9 @@
 // ===================================================================
-// Träningslogg – två lagringslägen:
-//   - Utloggad: allt sparas bara i webbläsarens localStorage (som innan).
-//   - Inloggad (magisk länk via mejl): allt sparas i Supabase, kopplat
-//     till ditt konto, så det synkas mellan enheter.
-// All CRUD-logik nedan går via loadProfile/saveProfile/loadSessions/
-// createSession/updateSession/removeSession, som själva väljer rätt
-// lagring beroende på om man är inloggad (isCloudMode()).
+// Träningslogg – kräver inloggning (magisk länk via mejl). All data
+// läses och sparas direkt mot Supabase, kopplat till det inloggade
+// kontot. Inget lokalt/gäst-läge - #app-content visas först efter
+// inloggning (se updateAuthUI()).
 // ===================================================================
-
-const PROFILE_KEY = "traningslogg_profile";
-const SESSIONS_KEY = "traningslogg_sessions";
 
 // ---------- Supabase ----------
 
@@ -20,18 +14,14 @@ const SUPABASE_ANON_KEY =
 // Anon-nyckeln är avsedd att vara publik (den är låst av
 // row-level-security-policyn i Supabase - se CLAUDE.md för SQL:en).
 //
-// Om CDN-skriptet inte hann ladda (t.ex. dåligt nät) finns inte
-// window.supabase - appen ska ändå fungera lokalt (localStorage) då,
-// bara utan inloggning/molnsynk.
+// Om CDN-skriptet inte hann ladda (t.ex. dåligt nät) blir den null -
+// appen visar då bara inloggningsformuläret (default-läget i HTML:en)
+// istället för att krascha.
 const supabaseClient = window.supabase
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
 
 let currentUser = null;
-
-function isCloudMode() {
-  return !!currentUser;
-}
 
 // ---------- Antagande för kaloriberäkningen ----------
 
@@ -101,7 +91,7 @@ function computeMET(type, pace) {
   }
 }
 
-// ---------- Lagringslager: Supabase (inloggad) eller localStorage ----------
+// ---------- Lagringslager: allt går mot Supabase ----------
 
 function profileFromRow(row) {
   if (!row) return null;
@@ -140,101 +130,68 @@ function sessionToRow(session) {
 }
 
 async function loadProfile() {
-  if (isCloudMode()) {
-    const { data, error } = await supabaseClient
-      .from("profiles")
-      .select("*")
-      .eq("user_id", currentUser.id)
-      .maybeSingle();
-    if (error) {
-      console.error("Kunde inte hämta profil från Supabase:", error);
-      return null;
-    }
-    return profileFromRow(data);
+  if (!currentUser) return null;
+  const { data, error } = await supabaseClient
+    .from("profiles")
+    .select("*")
+    .eq("user_id", currentUser.id)
+    .maybeSingle();
+  if (error) {
+    console.error("Kunde inte hämta profil från Supabase:", error);
+    return null;
   }
-
-  const raw = localStorage.getItem(PROFILE_KEY);
-  return raw ? JSON.parse(raw) : null;
+  return profileFromRow(data);
 }
 
 async function saveProfile(profile) {
-  if (isCloudMode()) {
-    const { error } = await supabaseClient
-      .from("profiles")
-      .upsert(profileToRow(profile), { onConflict: "user_id" });
-    if (error) alert("Kunde inte spara profilen till molnet: " + error.message);
-    return;
-  }
-
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+  if (!currentUser) return;
+  const { error } = await supabaseClient
+    .from("profiles")
+    .upsert(profileToRow(profile), { onConflict: "user_id" });
+  if (error) alert("Kunde inte spara profilen: " + error.message);
 }
 
 async function loadSessions() {
-  if (isCloudMode()) {
-    const { data, error } = await supabaseClient
-      .from("workout_sessions")
-      .select("*")
-      .eq("user_id", currentUser.id)
-      .order("date", { ascending: false });
-    if (error) {
-      console.error("Kunde inte hämta pass från Supabase:", error);
-      return [];
-    }
-    return (data || []).map(sessionFromRow);
+  if (!currentUser) return [];
+  const { data, error } = await supabaseClient
+    .from("workout_sessions")
+    .select("*")
+    .eq("user_id", currentUser.id)
+    .order("date", { ascending: false });
+  if (error) {
+    console.error("Kunde inte hämta pass från Supabase:", error);
+    return [];
   }
-
-  const raw = localStorage.getItem(SESSIONS_KEY);
-  return raw ? JSON.parse(raw) : [];
+  return (data || []).map(sessionFromRow);
 }
 
 async function createSession(session) {
-  if (isCloudMode()) {
-    const { data, error } = await supabaseClient
-      .from("workout_sessions")
-      .insert(sessionToRow(session))
-      .select()
-      .single();
-    if (error) {
-      alert("Kunde inte spara passet till molnet: " + error.message);
-      return null;
-    }
-    return sessionFromRow(data);
+  if (!currentUser) return null;
+  const { data, error } = await supabaseClient
+    .from("workout_sessions")
+    .insert(sessionToRow(session))
+    .select()
+    .single();
+  if (error) {
+    alert("Kunde inte spara passet: " + error.message);
+    return null;
   }
-
-  const sessions = await loadSessions();
-  const newSession = { ...session, id: Date.now() };
-  sessions.push(newSession);
-  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-  return newSession;
+  return sessionFromRow(data);
 }
 
 async function updateSession(id, changes) {
-  if (isCloudMode()) {
-    const { error } = await supabaseClient
-      .from("workout_sessions")
-      .update(sessionToRow(changes))
-      .eq("id", id);
-    if (error) alert("Kunde inte uppdatera passet i molnet: " + error.message);
-    return;
-  }
-
-  const sessions = await loadSessions();
-  const idx = sessions.findIndex((s) => s.id === id);
-  if (idx !== -1) {
-    sessions[idx] = { ...sessions[idx], ...changes, id };
-    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
-  }
+  if (!currentUser) return;
+  const { error } = await supabaseClient
+    .from("workout_sessions")
+    .update(sessionToRow(changes))
+    .eq("id", id);
+  if (error) alert("Kunde inte uppdatera passet: " + error.message);
 }
 
 async function removeSession(id) {
-  if (isCloudMode()) {
-    const { error } = await supabaseClient.from("workout_sessions").delete().eq("id", id);
-    if (error) alert("Kunde inte ta bort passet i molnet: " + error.message);
-    return;
-  }
-
-  const sessions = (await loadSessions()).filter((s) => s.id !== id);
-  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  if (!currentUser) return;
+  const { error } = await supabaseClient.from("workout_sessions").delete().eq("id", id);
+  if (error) alert("Kunde inte ta bort passet: " + error.message);
 }
 
 // ---------- Beräkningar ----------
@@ -262,14 +219,17 @@ function computeCaloriesBurned(durationMin, weightKg, type, pace) {
 function updateAuthUI() {
   const loggedOut = document.getElementById("auth-logged-out");
   const loggedIn = document.getElementById("auth-logged-in");
+  const appContent = document.getElementById("app-content");
 
   if (currentUser) {
     loggedOut.hidden = true;
     loggedIn.hidden = false;
+    appContent.hidden = false;
     document.getElementById("auth-user-email").textContent = currentUser.email;
   } else {
     loggedOut.hidden = false;
     loggedIn.hidden = true;
+    appContent.hidden = true;
   }
 }
 
@@ -297,57 +257,6 @@ document.getElementById("magic-link-form").addEventListener("submit", async (e) 
 
 document.getElementById("sign-out-btn").addEventListener("click", async () => {
   await supabaseClient?.auth.signOut();
-});
-
-// ---------- Flytta lokal data till molnet (första inloggningen) ----------
-
-async function maybeOfferMigration() {
-  const localProfile = localStorage.getItem(PROFILE_KEY);
-  const localSessionsRaw = localStorage.getItem(SESSIONS_KEY);
-  const localSessions = localSessionsRaw ? JSON.parse(localSessionsRaw) : [];
-
-  if (!localProfile && localSessions.length === 0) return; // inget att flytta
-
-  // Om molnkontot redan har egen data, anta att det redan är migrerat
-  // (eller att man loggat in på en annan enhet) och fråga inte.
-  const { data: existingProfile } = await supabaseClient
-    .from("profiles")
-    .select("user_id")
-    .eq("user_id", currentUser.id)
-    .maybeSingle();
-  const { count: existingSessionsCount } = await supabaseClient
-    .from("workout_sessions")
-    .select("id", { count: "exact", head: true })
-    .eq("user_id", currentUser.id);
-
-  if (existingProfile || existingSessionsCount) return;
-
-  document.getElementById("migration-banner").hidden = false;
-}
-
-async function runMigration() {
-  const localProfileRaw = localStorage.getItem(PROFILE_KEY);
-  const localSessionsRaw = localStorage.getItem(SESSIONS_KEY);
-  const localProfile = localProfileRaw ? JSON.parse(localProfileRaw) : null;
-  const localSessions = localSessionsRaw ? JSON.parse(localSessionsRaw) : [];
-
-  if (localProfile) await saveProfile(localProfile);
-  for (const session of localSessions) {
-    const { id, ...rest } = session;
-    await createSession(rest);
-  }
-
-  localStorage.removeItem(PROFILE_KEY);
-  localStorage.removeItem(SESSIONS_KEY);
-  document.getElementById("migration-banner").hidden = true;
-
-  await refreshProfileUI();
-  await refreshHistoryUI();
-}
-
-document.getElementById("migrate-yes-btn").addEventListener("click", runMigration);
-document.getElementById("migrate-no-btn").addEventListener("click", () => {
-  document.getElementById("migration-banner").hidden = true;
 });
 
 // ---------- Profil: rendering & events ----------
@@ -726,12 +635,9 @@ async function refreshHistoryUI() {
 
 resetSessionForm(); // sätter startläge: tom övningsrad, dagens datum, "styrka" synlig
 
-if (!supabaseClient) {
-  // Inget Supabase-bibliotek laddat (t.ex. offline) - kör vidare i rent
-  // lokalt läge, annars startar aldrig profil/historik-renderingen.
-  refreshProfileUI();
-  refreshHistoryUI();
-}
+// Utan Supabase-biblioteket (t.ex. CDN:et hann inte ladda pga dåligt nät)
+// finns inget att göra - HTML:ens default-läge visar redan bara
+// inloggningsformuläret, så vi lämnar det så istället för att krascha.
 
 // onAuthStateChange fyrar ett "INITIAL_SESSION"-event direkt vid start
 // (med ev. redan inloggad session), och sedan "SIGNED_IN"/"SIGNED_OUT" när
@@ -741,11 +647,6 @@ if (!supabaseClient) {
 supabaseClient?.auth.onAuthStateChange(async (event, session) => {
   currentUser = session ? session.user : null;
   updateAuthUI();
-
-  if (event === "SIGNED_IN") {
-    await maybeOfferMigration();
-  }
-
   await refreshProfileUI();
   await refreshHistoryUI();
 });

@@ -5,7 +5,8 @@ Björkekärr (och Hisingen)". Ren HTML/CSS/JS, inget byggsteg – funkar
 både öppnad direkt som `index.html` och hostad på GitHub Pages
 (`https://tompa711.github.io/pumping-iron-bjorkekarr/`). Inget eget
 backend-API - molnlagring (se nedan) går direkt mot Supabase från
-webbläsaren.
+webbläsaren. **Kräver inloggning** (magisk länk via mejl) - inget
+gäst-/lokalt läge längre.
 
 ## Design/tema
 
@@ -23,8 +24,11 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
 
 ## Vad appen gör (v1 + v2 + v3 + v4)
 
-- **Profil**: Namn, vikt (kg), längd (cm). Sparas lokalt och används för
-  att räkna ut BMI och en uppskattning av kaloriförbrukning.
+- **Inloggning krävs**: appen visar bara ett inloggningsformulär
+  (magisk länk via mejl) tills man är inloggad. Resten av appen
+  (`#app-content` i `index.html`) är dold fram tills dess.
+- **Profil**: Namn, vikt (kg), längd (cm). Sparas i molnet och används
+  för att räkna ut BMI och en uppskattning av kaloriförbrukning.
 - **Logga pass**: Datum, passtyp och pass-längd (minuter). Passtyper:
   - **Styrka**: man anger dessutom en lista av övningar (namn, vikt,
     reps) – flera övningar kan läggas till i samma pass. Övningsnamnet
@@ -47,30 +51,23 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   vikt, passets längd och en MET-nivå som räknas ut från tempot/farten
   för konditionspass). Man kan ta bort enskilda pass.
 
-## Datalagring: localStorage (utloggad) eller Supabase (inloggad)
+## Datalagring: allt i Supabase
 
-Appen har två lagringslägen, valda automatiskt beroende på om man är
-inloggad (`isCloudMode()` i `app.js`):
+All data sparas i Supabase (Postgres-databas i molnet), kopplat till
+det inloggade kontot via `user_id`. Synkas mellan alla
+enheter/webbläsare man loggar in med samma mejl på. Inget lokalt
+gäst-läge - `loadProfile()`/`loadSessions()` returnerar tomt om ingen
+är inloggad (`!currentUser`), vilket aldrig ska hända i praktiken
+eftersom `#app-content` är dolt tills man loggat in.
 
-- **Utloggad**: allt sparas i webbläsarens `localStorage`, precis som i
-  tidigare versioner av appen. Data finns bara på den dator/webbläsare
-  där den sparades, och försvinner om man rensar webbläsardata.
-- **Inloggad**: allt sparas i Supabase (Postgres-databas i molnet),
-  kopplat till det inloggade kontot via `user_id`. Synkas då mellan
-  alla enheter/webbläsare man loggar in med samma mejl på.
+CRUD går via: `loadProfile()`, `saveProfile()`, `loadSessions()`,
+`createSession()`, `updateSession()`, `removeSession()` i `app.js`.
 
-All CRUD går via samma funktioner oavsett läge: `loadProfile()`,
-`saveProfile()`, `loadSessions()`, `createSession()`, `updateSession()`,
-`removeSession()` - de väljer själva rätt lagring internt.
-
-**Datamodell** (samma form i båda lägena, se `profileFromRow`/
-`profileToRow`/`sessionFromRow`/`sessionToRow` i `app.js` för
-mappningen mot Supabase-kolumnerna):
+**Datamodell** (se `profileFromRow`/`profileToRow`/`sessionFromRow`/
+`sessionToRow` i `app.js` för mappningen mot Supabase-kolumnerna):
 
 - Profil: `{ name, weightKg, heightCm }`
-  (localStorage-nyckel: `traningslogg_profile`)
 - Pass: `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps }] }`
-  (localStorage-nyckel: `traningslogg_sessions`)
   - `type` är `"strength"`, `"running"`, `"walking"`, `"cycling"` eller
     `"elliptical"`.
   - `exercises` är alltid en tom lista `[]` utom för `"strength"`.
@@ -78,8 +75,6 @@ mappningen mot Supabase-kolumnerna):
     tempo i **min/km** för löpning/promenad/crosstrainer, eller
     snitthastighet i **km/h** för cykling (se `PACE_UNIT_BY_TYPE` i
     `app.js`).
-  - Pass sparade innan `type` fanns tolkas som `"strength"`
-    (`s.type || "strength"`) för bakåtkompatibilitet.
 
 ## Inloggning & molnlagring (Supabase)
 
@@ -93,12 +88,9 @@ mappningen mot Supabase-kolumnerna):
   ligger hårdkodad i `app.js` - det är avsiktligt och säkert **så länge
   RLS-policyn nedan är aktiv**: anon-nyckeln ger bara åtkomst till rader
   som `auth.uid()` äger, aldrig andras data.
-- **Migrering av lokal data**: När man loggar in för första gången (event
-  `SIGNED_IN`, se `onAuthStateChange` längst ner i `app.js`) och det
-  finns data kvar i `localStorage` men inget i molnkontot än, visas en
-  banner ("Flytta över din lokala data?"). Tackar man ja körs
-  `runMigration()`: profilen sparas och varje lokalt pass skapas som en
-  ny rad i Supabase, sedan rensas `localStorage`.
+- **UI-gating**: `updateAuthUI()` i `app.js` visar/döljer
+  `#app-content` (profil, pass-formulär, historik) beroende på om
+  `currentUser` är satt. Utloggad ser man bara inloggningsformuläret.
 
 ### Databasschema (kör i Supabase → SQL Editor, en gång)
 
@@ -206,8 +198,7 @@ behövs. Klickar man på ett förslag fylls namnet i automatiskt.
 
 - `index.html` – sidstruktur och formulär
 - `style.css` – utseende
-- `app.js` – all logik: auth, Supabase/localStorage-lagring,
-  beräkningar, rendering
+- `app.js` – all logik: auth, Supabase-lagring, beräkningar, rendering
 - `CLAUDE.md` – den här filen
 
 Vanilla JS + `@supabase/supabase-js` via CDN. Inget npm, inget
