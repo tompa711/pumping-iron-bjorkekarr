@@ -1,14 +1,42 @@
 // ===================================================================
-// Träningslogg – all data sparas i webbläsarens localStorage.
-// Det finns ingen server: allt som lagras stannar på den här datorn,
-// i den här webbläsaren. Rensar man webbläsarens data försvinner loggen.
+// Träningslogg – två lagringslägen:
+//   - Utloggad: allt sparas bara i webbläsarens localStorage (som innan).
+//   - Inloggad (magisk länk via mejl): allt sparas i Supabase, kopplat
+//     till ditt konto, så det synkas mellan enheter.
+// All CRUD-logik nedan går via loadProfile/saveProfile/loadSessions/
+// createSession/updateSession/removeSession, som själva väljer rätt
+// lagring beroende på om man är inloggad (isCloudMode()).
 // ===================================================================
 
 const PROFILE_KEY = "traningslogg_profile";
 const SESSIONS_KEY = "traningslogg_sessions";
 
-// Antagande för kaloriberäkningen: MET (Metabolic Equivalent of Task) är
-// ett standardmått för hur ansträngande en aktivitet är. Formeln nedan
+// ---------- Supabase ----------
+
+const SUPABASE_URL = "https://qnezslbbmfsdhsaiuesf.supabase.co";
+const SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFuZXpzbGJibWZzZGhzYWl1ZXNmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk0Mzk3MjQsImV4cCI6MjEwNTAxNTcyNH0.tZWe8ETuJfn9TtJZSrQCIre9H3isKaiNLH7u8ncxsk8";
+
+// Anon-nyckeln är avsedd att vara publik (den är låst av
+// row-level-security-policyn i Supabase - se CLAUDE.md för SQL:en).
+//
+// Om CDN-skriptet inte hann ladda (t.ex. dåligt nät) finns inte
+// window.supabase - appen ska ändå fungera lokalt (localStorage) då,
+// bara utan inloggning/molnsynk.
+const supabaseClient = window.supabase
+  ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
+
+let currentUser = null;
+
+function isCloudMode() {
+  return !!currentUser;
+}
+
+// ---------- Antagande för kaloriberäkningen ----------
+
+// MET (Metabolic Equivalent of Task) är ett standardmått för hur
+// ansträngande en aktivitet är. Formeln nedan
 // (kcal/min = MET * 3.5 * kroppsvikt(kg) / 200) är en vedertagen
 // tumregelsformel, inte en exakt mätning.
 //
@@ -73,23 +101,139 @@ function computeMET(type, pace) {
   }
 }
 
-// ---------- Hjälpfunktioner: läsa/skriva localStorage ----------
+// ---------- Lagringslager: Supabase (inloggad) eller localStorage ----------
 
-function loadProfile() {
+function profileFromRow(row) {
+  if (!row) return null;
+  return { name: row.name || "", weightKg: row.weight_kg, heightCm: row.height_cm };
+}
+
+function profileToRow(profile) {
+  return {
+    user_id: currentUser.id,
+    name: profile.name,
+    weight_kg: profile.weightKg,
+    height_cm: profile.heightCm,
+  };
+}
+
+function sessionFromRow(row) {
+  return {
+    id: row.id,
+    type: row.type,
+    date: row.date,
+    durationMin: row.duration_min,
+    pace: row.pace,
+    exercises: row.exercises || [],
+  };
+}
+
+function sessionToRow(session) {
+  return {
+    user_id: currentUser.id,
+    type: session.type,
+    date: session.date,
+    duration_min: session.durationMin,
+    pace: session.pace,
+    exercises: session.exercises,
+  };
+}
+
+async function loadProfile() {
+  if (isCloudMode()) {
+    const { data, error } = await supabaseClient
+      .from("profiles")
+      .select("*")
+      .eq("user_id", currentUser.id)
+      .maybeSingle();
+    if (error) {
+      console.error("Kunde inte hämta profil från Supabase:", error);
+      return null;
+    }
+    return profileFromRow(data);
+  }
+
   const raw = localStorage.getItem(PROFILE_KEY);
   return raw ? JSON.parse(raw) : null;
 }
 
-function saveProfile(profile) {
+async function saveProfile(profile) {
+  if (isCloudMode()) {
+    const { error } = await supabaseClient
+      .from("profiles")
+      .upsert(profileToRow(profile), { onConflict: "user_id" });
+    if (error) alert("Kunde inte spara profilen till molnet: " + error.message);
+    return;
+  }
+
   localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
 }
 
-function loadSessions() {
+async function loadSessions() {
+  if (isCloudMode()) {
+    const { data, error } = await supabaseClient
+      .from("workout_sessions")
+      .select("*")
+      .eq("user_id", currentUser.id)
+      .order("date", { ascending: false });
+    if (error) {
+      console.error("Kunde inte hämta pass från Supabase:", error);
+      return [];
+    }
+    return (data || []).map(sessionFromRow);
+  }
+
   const raw = localStorage.getItem(SESSIONS_KEY);
   return raw ? JSON.parse(raw) : [];
 }
 
-function saveSessions(sessions) {
+async function createSession(session) {
+  if (isCloudMode()) {
+    const { data, error } = await supabaseClient
+      .from("workout_sessions")
+      .insert(sessionToRow(session))
+      .select()
+      .single();
+    if (error) {
+      alert("Kunde inte spara passet till molnet: " + error.message);
+      return null;
+    }
+    return sessionFromRow(data);
+  }
+
+  const sessions = await loadSessions();
+  const newSession = { ...session, id: Date.now() };
+  sessions.push(newSession);
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  return newSession;
+}
+
+async function updateSession(id, changes) {
+  if (isCloudMode()) {
+    const { error } = await supabaseClient
+      .from("workout_sessions")
+      .update(sessionToRow(changes))
+      .eq("id", id);
+    if (error) alert("Kunde inte uppdatera passet i molnet: " + error.message);
+    return;
+  }
+
+  const sessions = await loadSessions();
+  const idx = sessions.findIndex((s) => s.id === id);
+  if (idx !== -1) {
+    sessions[idx] = { ...sessions[idx], ...changes, id };
+    localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
+  }
+}
+
+async function removeSession(id) {
+  if (isCloudMode()) {
+    const { error } = await supabaseClient.from("workout_sessions").delete().eq("id", id);
+    if (error) alert("Kunde inte ta bort passet i molnet: " + error.message);
+    return;
+  }
+
+  const sessions = (await loadSessions()).filter((s) => s.id !== id);
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions));
 }
 
@@ -113,10 +257,103 @@ function computeCaloriesBurned(durationMin, weightKg, type, pace) {
   return Math.round(kcalPerMin * durationMin);
 }
 
+// ---------- Konto: inloggning (magisk länk), utloggning, UI-läge ----------
+
+function updateAuthUI() {
+  const loggedOut = document.getElementById("auth-logged-out");
+  const loggedIn = document.getElementById("auth-logged-in");
+
+  if (currentUser) {
+    loggedOut.hidden = true;
+    loggedIn.hidden = false;
+    document.getElementById("auth-user-email").textContent = currentUser.email;
+  } else {
+    loggedOut.hidden = false;
+    loggedIn.hidden = true;
+  }
+}
+
+document.getElementById("magic-link-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("magic-link-status");
+
+  if (!supabaseClient) {
+    statusEl.textContent = "Kunde inte ladda inloggningen (kolla internetuppkopplingen och ladda om sidan).";
+    return;
+  }
+
+  const email = document.getElementById("magic-link-email").value.trim();
+  statusEl.textContent = "Skickar länk …";
+
+  const { error } = await supabaseClient.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: window.location.origin + window.location.pathname },
+  });
+
+  statusEl.textContent = error
+    ? `Något gick fel: ${error.message}`
+    : "Länk skickad! Kolla din mejl och klicka på länken för att logga in.";
+});
+
+document.getElementById("sign-out-btn").addEventListener("click", async () => {
+  await supabaseClient?.auth.signOut();
+});
+
+// ---------- Flytta lokal data till molnet (första inloggningen) ----------
+
+async function maybeOfferMigration() {
+  const localProfile = localStorage.getItem(PROFILE_KEY);
+  const localSessionsRaw = localStorage.getItem(SESSIONS_KEY);
+  const localSessions = localSessionsRaw ? JSON.parse(localSessionsRaw) : [];
+
+  if (!localProfile && localSessions.length === 0) return; // inget att flytta
+
+  // Om molnkontot redan har egen data, anta att det redan är migrerat
+  // (eller att man loggat in på en annan enhet) och fråga inte.
+  const { data: existingProfile } = await supabaseClient
+    .from("profiles")
+    .select("user_id")
+    .eq("user_id", currentUser.id)
+    .maybeSingle();
+  const { count: existingSessionsCount } = await supabaseClient
+    .from("workout_sessions")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", currentUser.id);
+
+  if (existingProfile || existingSessionsCount) return;
+
+  document.getElementById("migration-banner").hidden = false;
+}
+
+async function runMigration() {
+  const localProfileRaw = localStorage.getItem(PROFILE_KEY);
+  const localSessionsRaw = localStorage.getItem(SESSIONS_KEY);
+  const localProfile = localProfileRaw ? JSON.parse(localProfileRaw) : null;
+  const localSessions = localSessionsRaw ? JSON.parse(localSessionsRaw) : [];
+
+  if (localProfile) await saveProfile(localProfile);
+  for (const session of localSessions) {
+    const { id, ...rest } = session;
+    await createSession(rest);
+  }
+
+  localStorage.removeItem(PROFILE_KEY);
+  localStorage.removeItem(SESSIONS_KEY);
+  document.getElementById("migration-banner").hidden = true;
+
+  await refreshProfileUI();
+  await refreshHistoryUI();
+}
+
+document.getElementById("migrate-yes-btn").addEventListener("click", runMigration);
+document.getElementById("migrate-no-btn").addEventListener("click", () => {
+  document.getElementById("migration-banner").hidden = true;
+});
+
 // ---------- Profil: rendering & events ----------
 
-function renderProfileStats() {
-  const profile = loadProfile();
+async function renderProfileStats() {
+  const profile = await loadProfile();
   const el = document.getElementById("profile-stats");
 
   if (!profile || !profile.weightKg || !profile.heightCm) {
@@ -130,24 +367,28 @@ function renderProfileStats() {
   `;
 }
 
-function fillProfileForm() {
-  const profile = loadProfile();
-  if (!profile) return;
-  document.getElementById("profile-name").value = profile.name || "";
-  document.getElementById("profile-weight").value = profile.weightKg || "";
-  document.getElementById("profile-height").value = profile.heightCm || "";
+async function fillProfileForm() {
+  const profile = await loadProfile();
+  document.getElementById("profile-name").value = profile ? profile.name || "" : "";
+  document.getElementById("profile-weight").value = profile ? profile.weightKg || "" : "";
+  document.getElementById("profile-height").value = profile ? profile.heightCm || "" : "";
 }
 
-document.getElementById("profile-form").addEventListener("submit", (e) => {
+async function refreshProfileUI() {
+  await fillProfileForm();
+  await renderProfileStats();
+}
+
+document.getElementById("profile-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const profile = {
     name: document.getElementById("profile-name").value.trim(),
     weightKg: parseFloat(document.getElementById("profile-weight").value),
     heightCm: parseFloat(document.getElementById("profile-height").value),
   };
-  saveProfile(profile);
-  renderProfileStats();
-  renderHistory(); // kalorier per pass beror på profilens vikt
+  await saveProfile(profile);
+  await renderProfileStats();
+  await renderHistory(); // kalorier per pass beror på profilens vikt
 });
 
 // ---------- Övningssök mot wger.dev (publikt API, ingen nyckel behövs) ----------
@@ -320,8 +561,9 @@ function resetSessionForm() {
   document.getElementById("cancel-edit-btn").hidden = true;
 }
 
-function startEditingSession(id) {
-  const session = loadSessions().find((s) => s.id === id);
+async function startEditingSession(id) {
+  const sessions = await loadSessions();
+  const session = sessions.find((s) => s.id === id);
   if (!session) return;
 
   document.getElementById("session-editing-id").value = session.id;
@@ -354,7 +596,7 @@ document.getElementById("cancel-edit-btn").addEventListener("click", resetSessio
 
 // ---------- Spara / uppdatera pass ----------
 
-document.getElementById("session-form").addEventListener("submit", (e) => {
+document.getElementById("session-form").addEventListener("submit", async (e) => {
   e.preventDefault();
 
   const editingId = document.getElementById("session-editing-id").value;
@@ -385,41 +627,27 @@ document.getElementById("session-form").addEventListener("submit", (e) => {
     }
   }
 
-  const sessions = loadSessions();
-
   if (editingId) {
-    const idx = sessions.findIndex((s) => s.id === Number(editingId));
-    if (idx !== -1) {
-      sessions[idx] = { ...sessions[idx], type, date, durationMin, exercises, pace };
-    }
+    await updateSession(Number(editingId), { type, date, durationMin, exercises, pace });
   } else {
-    sessions.push({
-      id: Date.now(),
-      type,
-      date,
-      durationMin,
-      exercises,
-      pace,
-    });
+    await createSession({ type, date, durationMin, exercises, pace });
   }
 
-  saveSessions(sessions);
   resetSessionForm();
-  renderHistory();
+  await renderHistory();
 });
 
 // ---------- Historik: rendering ----------
 
-function deleteSession(id) {
-  const sessions = loadSessions().filter((s) => s.id !== id);
-  saveSessions(sessions);
-  renderHistory();
+async function deleteSession(id) {
+  await removeSession(id);
+  await renderHistory();
 }
 
-function renderHistory() {
+async function renderHistory() {
   const el = document.getElementById("history");
-  const sessions = loadSessions().slice().sort((a, b) => (a.date < b.date ? 1 : -1));
-  const profile = loadProfile();
+  const sessions = (await loadSessions()).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+  const profile = await loadProfile();
 
   if (sessions.length === 0) {
     el.innerHTML = `<p class="empty">Inga pass loggade ännu.</p>`;
@@ -490,9 +718,34 @@ function renderHistory() {
   });
 }
 
+async function refreshHistoryUI() {
+  await renderHistory();
+}
+
 // ---------- Init ----------
 
-fillProfileForm();
-renderProfileStats();
 resetSessionForm(); // sätter startläge: tom övningsrad, dagens datum, "styrka" synlig
-renderHistory();
+
+if (!supabaseClient) {
+  // Inget Supabase-bibliotek laddat (t.ex. offline) - kör vidare i rent
+  // lokalt läge, annars startar aldrig profil/historik-renderingen.
+  refreshProfileUI();
+  refreshHistoryUI();
+}
+
+// onAuthStateChange fyrar ett "INITIAL_SESSION"-event direkt vid start
+// (med ev. redan inloggad session), och sedan "SIGNED_IN"/"SIGNED_OUT" när
+// man loggar in/ut - inklusive när man klickar på den magiska länken i
+// mejlet och kommer tillbaka hit. Det är alltså den enda platsen vi
+// behöver trigga om profil/historik ska laddas om.
+supabaseClient?.auth.onAuthStateChange(async (event, session) => {
+  currentUser = session ? session.user : null;
+  updateAuthUI();
+
+  if (event === "SIGNED_IN") {
+    await maybeOfferMigration();
+  }
+
+  await refreshProfileUI();
+  await refreshHistoryUI();
+});

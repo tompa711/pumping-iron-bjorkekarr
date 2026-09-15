@@ -1,8 +1,11 @@
 # Pumping Iron Björkekärr – Träningslogg
 
-En enkel träningslogg-app som körs helt lokalt i webbläsaren. Ingen
-backend, inget byggsteg – öppna bara `index.html` i webbläsaren. Byggd
-åt träningsgruppen "Pumping Iron Björkekärr (och Hisingen)".
+En enkel träningslogg-app, byggd åt träningsgruppen "Pumping Iron
+Björkekärr (och Hisingen)". Ren HTML/CSS/JS, inget byggsteg – funkar
+både öppnad direkt som `index.html` och hostad på GitHub Pages
+(`https://tompa711.github.io/pumping-iron-bjorkekarr/`). Inget eget
+backend-API - molnlagring (se nedan) går direkt mot Supabase från
+webbläsaren.
 
 ## Design/tema
 
@@ -44,19 +47,30 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   vikt, passets längd och en MET-nivå som räknas ut från tempot/farten
   för konditionspass). Man kan ta bort enskilda pass.
 
-## Datalagring
+## Datalagring: localStorage (utloggad) eller Supabase (inloggad)
 
-All data sparas i webbläsarens `localStorage` (ingen server, ingen
-databas). Det betyder:
+Appen har två lagringslägen, valda automatiskt beroende på om man är
+inloggad (`isCloudMode()` i `app.js`):
 
-- Data finns bara på den dator/webbläsare där den sparades.
-- Rensar man webbläsarens data (cache/cookies) försvinner loggen.
-- Ingen data skickas någonstans – allt stannar lokalt.
+- **Utloggad**: allt sparas i webbläsarens `localStorage`, precis som i
+  tidigare versioner av appen. Data finns bara på den dator/webbläsare
+  där den sparades, och försvinner om man rensar webbläsardata.
+- **Inloggad**: allt sparas i Supabase (Postgres-databas i molnet),
+  kopplat till det inloggade kontot via `user_id`. Synkas då mellan
+  alla enheter/webbläsare man loggar in med samma mejl på.
 
-Två nycklar används:
-- `traningslogg_profile` – ett objekt: `{ name, weightKg, heightCm }`
-- `traningslogg_sessions` – en lista av pass:
-  `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps }] }`
+All CRUD går via samma funktioner oavsett läge: `loadProfile()`,
+`saveProfile()`, `loadSessions()`, `createSession()`, `updateSession()`,
+`removeSession()` - de väljer själva rätt lagring internt.
+
+**Datamodell** (samma form i båda lägena, se `profileFromRow`/
+`profileToRow`/`sessionFromRow`/`sessionToRow` i `app.js` för
+mappningen mot Supabase-kolumnerna):
+
+- Profil: `{ name, weightKg, heightCm }`
+  (localStorage-nyckel: `traningslogg_profile`)
+- Pass: `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps }] }`
+  (localStorage-nyckel: `traningslogg_sessions`)
   - `type` är `"strength"`, `"running"`, `"walking"`, `"cycling"` eller
     `"elliptical"`.
   - `exercises` är alltid en tom lista `[]` utom för `"strength"`.
@@ -66,6 +80,76 @@ Två nycklar används:
     `app.js`).
   - Pass sparade innan `type` fanns tolkas som `"strength"`
     (`s.type || "strength"`) för bakåtkompatibilitet.
+
+## Inloggning & molnlagring (Supabase)
+
+- **Bibliotek**: `@supabase/supabase-js` laddas via CDN
+  (jsdelivr, pinnad version) i `index.html` - inget npm/byggsteg.
+- **Inloggning**: magisk länk via mejl (`supabaseClient.auth.signInWithOtp`).
+  Ingen lösenordshantering. `emailRedirectTo` sätts till appens egen URL
+  (`window.location.origin + pathname`) så länken i mejlet tar tillbaka
+  hit.
+- **Projekt**: `https://qnezslbbmfsdhsaiuesf.supabase.co`. `anon`-nyckeln
+  ligger hårdkodad i `app.js` - det är avsiktligt och säkert **så länge
+  RLS-policyn nedan är aktiv**: anon-nyckeln ger bara åtkomst till rader
+  som `auth.uid()` äger, aldrig andras data.
+- **Migrering av lokal data**: När man loggar in för första gången (event
+  `SIGNED_IN`, se `onAuthStateChange` längst ner i `app.js`) och det
+  finns data kvar i `localStorage` men inget i molnkontot än, visas en
+  banner ("Flytta över din lokala data?"). Tackar man ja körs
+  `runMigration()`: profilen sparas och varje lokalt pass skapas som en
+  ny rad i Supabase, sedan rensas `localStorage`.
+
+### Databasschema (kör i Supabase → SQL Editor, en gång)
+
+Detta är **inte körbart av Claude** - Claude har bara den publika
+anon-nyckeln, ingen admin-/SQL-åtkomst till projektet. Kör följande i
+Supabase dashboardens SQL Editor innan inloggning/molnlagring funkar:
+
+```sql
+create table public.profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  name text,
+  weight_kg numeric,
+  height_cm numeric,
+  updated_at timestamptz default now()
+);
+
+create table public.workout_sessions (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  type text not null,
+  date date not null,
+  duration_min numeric not null,
+  pace numeric,
+  exercises jsonb not null default '[]'::jsonb,
+  created_at timestamptz default now()
+);
+
+alter table public.profiles enable row level security;
+alter table public.workout_sessions enable row level security;
+
+create policy "Users manage their own profile"
+  on public.profiles for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "Users manage their own sessions"
+  on public.workout_sessions for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+```
+
+### Övrig Supabase-konfiguration (görs en gång, i dashboarden)
+
+- **Authentication → URL Configuration**: lägg till appens
+  GitHub Pages-URL (`https://tompa711.github.io/pumping-iron-bjorkekarr/`)
+  som både **Site URL** och i listan **Redirect URLs**. Utan detta
+  vägrar Supabase skicka tillbaka användaren till appen efter klick på
+  den magiska länken.
+- Magisk länk-inloggning **funkar inte** när appen öppnas lokalt via
+  `file://` (Supabase kräver en http(s)-URL för redirect). Testa
+  inloggning via den riktiga GitHub Pages-adressen.
 
 ## Beräkningar
 
@@ -122,20 +206,21 @@ behövs. Klickar man på ett förslag fylls namnet i automatiskt.
 
 - `index.html` – sidstruktur och formulär
 - `style.css` – utseende
-- `app.js` – all logik: spara/läsa localStorage, beräkningar, rendering
+- `app.js` – all logik: auth, Supabase/localStorage-lagring,
+  beräkningar, rendering
 - `CLAUDE.md` – den här filen
 
-Rent vanilla JS, ingen framework, inga externa beroenden. Ingen
-byggprocess krävs.
+Vanilla JS + `@supabase/supabase-js` via CDN. Inget npm, inget
+byggsteg.
 
 ## Möjliga nästa steg (inte byggt än)
 
 - Statistik över tid (t.ex. graf på volym eller vikt per övning, eller
   tempoutveckling för löpning).
-- Export/import av data (t.ex. till JSON-fil) som backup, eftersom
-  localStorage är knutet till en enskild webbläsare/dator.
+- Export/import av data (t.ex. till JSON-fil) som backup.
 - Fler konditionspasstyper (t.ex. simning, rodd) eller möjlighet att
   själv justera MET-formeln/faktorn.
 - Automatisk uträkning av distans (utifrån längd + tempo/fart) och
   visning av den i historiken.
-- En riktig backend om datan ska synkas mellan enheter.
+- Delad logg mellan gruppens medlemmar (idag är molnlagringen
+  per-användare/privat, inte delad mellan olika konton).

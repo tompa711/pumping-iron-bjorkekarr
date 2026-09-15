@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
 </head>
 <body>
   <div class="wrap">
@@ -23,10 +24,51 @@
       </div>
     </header>
 
+    <!-- ===== KONTO / INLOGGNING ===== -->
+    <section class="card">
+      <h2>Konto</h2>
+
+      <div id="auth-logged-out">
+        <p class="hint">
+          Logga in med din mejl för att synka din träningsdata mellan
+          enheter (sparas då i molnet via Supabase, kopplat till dig).
+          Utan inloggning sparas allt bara i den här webbläsaren.
+        </p>
+        <form id="magic-link-form" class="form-grid">
+          <label>
+            E-post
+            <input type="email" id="magic-link-email" placeholder="din@mejl.se" required>
+          </label>
+          <button type="submit">Skicka inloggningslänk</button>
+        </form>
+        <p id="magic-link-status" class="hint"></p>
+      </div>
+
+      <div id="auth-logged-in" hidden>
+        <p class="hint">
+          Inloggad som <strong id="auth-user-email"></strong> &middot;
+          data synkas till molnet.
+        </p>
+        <button type="button" id="sign-out-btn" class="secondary">Logga ut</button>
+      </div>
+    </section>
+
+    <!-- ===== FLYTTA LOKAL DATA TILL MOLNET ===== -->
+    <section class="card" id="migration-banner" hidden>
+      <h2>Flytta över din lokala data?</h2>
+      <p class="hint">
+        Vi hittade träningsdata sparad i den här webbläsaren från innan du
+        loggade in. Vill du flytta över den till ditt konto, så den finns
+        tillgänglig på alla dina enheter?
+      </p>
+      <button type="button" id="migrate-yes-btn">Ja, flytta över</button>
+      <button type="button" id="migrate-no-btn" class="secondary">Nej, behåll bara i molnet</button>
+    </section>
+
     <!-- ===== PROFIL ===== -->
     <section class="card">
       <h2>Din profil</h2>
-      <p class="hint">Används för att räkna ut BMI och ungefärligt kaloriförbrukning per pass. Sparas bara i din egen webbläsare.</p>
+      <p class="hint">Används för att räkna ut BMI och ungefärligt kaloriförbrukning per pass. Sparas i molnet om du är inloggad, annars bara i din egen webbläsare.</p>
       <form id="profile-form" class="form-grid">
         <label>
           Namn
