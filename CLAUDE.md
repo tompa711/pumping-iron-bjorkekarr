@@ -42,6 +42,12 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
     (lägre värde = snabbare). Cykling anges som **snitthastighet i
     km/h** (högre värde = snabbare) – det är så farten normalt anges
     för respektive aktivitet.
+- **Auto-ifylld vikt/reps**: När man skriver in ett övningsnamn man
+  loggat förut (matchar exakt, oavsett skiftläge) fylls senast loggade
+  vikt och reps i automatiskt i de fälten - bara om de är tomma, så det
+  aldrig skriver över något man redan fyllt i för hand. Triggas både
+  när man klickar ett wger-sökförslag och när man lämnar fältet
+  (`autofillFromHistory()` i `wireExerciseAutocomplete()`, `app.js`).
 - **Redigera pass**: Varje rad i historiken har en "Redigera"-knapp som
   laddar in passet i formuläret ovan (datum, längd, typ, tempo/fart,
   ev. övningar) så man kan ändra det och spara igen. "Avbryt
@@ -50,6 +56,20 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   tempo/fart, ev. övningar och uträknade kalorier (baserat på profilens
   vikt, passets längd och en MET-nivå som räknas ut från tempot/farten
   för konditionspass). Man kan ta bort enskilda pass.
+- **Statistik**: Ett eget kort under historiken med
+  - **Volym per vecka** (styrkepass): summan av vikt × reps för alla
+    övningar, grupperat per kalendervecka (måndag-baserad, ISO-
+    veckonummer som etikett), visat som ett enkelt stapeldiagram i ren
+    CSS/HTML (ingen chart-bibliotek). Visar bara de senaste 12 veckorna
+    **som faktiskt har loggade styrkepass** - hopp i tränings-glesa
+    perioder visas inte som nollstaplar.
+  - **Personliga rekord**: en tabell per övningsnamn med högsta vikt
+    någonsin loggad och högsta volym i ett enskilt set (vikt × reps)
+    någonsin loggad. Övningsnamn matchas exakt (skiftlägeskänsligt för
+    visning, men grupperas skiftlägesokänsligt).
+  - Beräknas client-side i `app.js` (`computeWeeklyVolume()`,
+    `computePersonalRecords()`) från samma sessionsdata som historiken,
+    ingen extra Supabase-fråga.
 
 ## Datalagring: allt i Supabase
 
@@ -222,8 +242,8 @@ byggsteg.
 
 ## Möjliga nästa steg (inte byggt än)
 
-- Statistik över tid (t.ex. graf på volym eller vikt per övning, eller
-  tempoutveckling för löpning).
+- Statistik över tid för konditionspass (t.ex. tempoutveckling för
+  löpning) - idag finns bara volym/PR-statistik för styrkepass.
 - Export/import av data (t.ex. till JSON-fil) som backup.
 - Fler konditionspasstyper (t.ex. simning, rodd) eller möjlighet att
   själv justera MET-formeln/faktorn.

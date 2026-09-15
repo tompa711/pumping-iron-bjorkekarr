@@ -359,7 +359,7 @@ document.getElementById("profile-form").addEventListener("submit", async (e) => 
   };
   await saveProfile(profile);
   await renderProfileStats();
-  await renderHistory(); // kalorier per pass beror på profilens vikt
+  await refreshHistoryUI(); // kalorier per pass beror på profilens vikt
 });
 
 // ---------- Övningssök mot wger.dev (publikt API, ingen nyckel behövs) ----------
@@ -392,13 +392,26 @@ async function searchWgerExercises(term, signal) {
     .filter(Boolean);
 }
 
-function wireExerciseAutocomplete(input, list) {
+function wireExerciseAutocomplete(row) {
+  const input = row.querySelector(".ex-name");
+  const list = row.querySelector(".ex-suggestions");
+  const weightInput = row.querySelector(".ex-weight");
+  const repsInput = row.querySelector(".ex-reps");
   let debounceTimer = null;
   let controller = null;
 
   function hideSuggestions() {
     list.hidden = true;
     list.innerHTML = "";
+  }
+
+  // Fyller i senast loggade vikt/reps för övningen, men bara i fält som
+  // fortfarande är tomma - skriver aldrig över något man redan angett.
+  function autofillFromHistory(name) {
+    const stats = lastExerciseStatsByName.get(name.trim().toLowerCase());
+    if (!stats) return;
+    if (!weightInput.value) weightInput.value = stats.weight;
+    if (!repsInput.value) repsInput.value = stats.reps;
   }
 
   function renderSuggestions(term, results) {
@@ -426,6 +439,7 @@ function wireExerciseAutocomplete(input, list) {
         e.preventDefault();
         input.value = results[i].name;
         hideSuggestions();
+        autofillFromHistory(results[i].name);
       });
     });
   }
@@ -454,6 +468,7 @@ function wireExerciseAutocomplete(input, list) {
     // Liten fördröjning så ett klick på ett förslag (mousedown ovan) hinner
     // köras innan listan döljs.
     setTimeout(hideSuggestions, 150);
+    autofillFromHistory(input.value);
   });
 }
 
@@ -482,7 +497,7 @@ function addExerciseRow() {
     <button type="button" class="secondary remove-row">✕</button>
   `;
   row.querySelector(".remove-row").addEventListener("click", () => row.remove());
-  wireExerciseAutocomplete(row.querySelector(".ex-name"), row.querySelector(".ex-suggestions"));
+  wireExerciseAutocomplete(row);
   container.appendChild(row);
 }
 
@@ -605,20 +620,19 @@ document.getElementById("session-form").addEventListener("submit", async (e) => 
   }
 
   resetSessionForm();
-  await renderHistory();
+  await refreshHistoryUI();
 });
 
 // ---------- Historik: rendering ----------
 
 async function deleteSession(id) {
   await removeSession(id);
-  await renderHistory();
+  await refreshHistoryUI();
 }
 
-async function renderHistory() {
+function renderHistory(allSessions, profile) {
   const el = document.getElementById("history");
-  const sessions = (await loadSessions()).slice().sort((a, b) => (a.date < b.date ? 1 : -1));
-  const profile = await loadProfile();
+  const sessions = allSessions.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
 
   if (sessions.length === 0) {
     el.innerHTML = `<p class="empty">Inga pass loggade ännu.</p>`;
@@ -689,8 +703,172 @@ async function renderHistory() {
   });
 }
 
+// ---------- Statistik: volym per vecka & personliga rekord ----------
+
+// Måndagen (lokal midnatt) i veckan som ett datum tillhör.
+function getMonday(dateStr) {
+  const date = new Date(dateStr + "T00:00:00");
+  const dayIndex = (date.getDay() + 6) % 7; // 0 = måndag
+  date.setDate(date.getDate() - dayIndex);
+  return date;
+}
+
+// ISO 8601-veckonummer, baserat på torsdagen i veckan (måndag+3 dagar).
+function formatWeekLabel(monday) {
+  const thursday = new Date(monday);
+  thursday.setDate(thursday.getDate() + 3);
+  const firstThursday = new Date(thursday.getFullYear(), 0, 4);
+  const firstDayIndex = (firstThursday.getDay() + 6) % 7;
+  firstThursday.setDate(firstThursday.getDate() - firstDayIndex + 3);
+  const weekNumber = 1 + Math.round((thursday - firstThursday) / (7 * 24 * 3600 * 1000));
+  return `v.${weekNumber}`;
+}
+
+function computeWeeklyVolume(sessions) {
+  const byWeek = new Map(); // "YYYY-MM-DD" (måndag) -> { monday, volume }
+
+  sessions
+    .filter((s) => (s.type || "strength") === "strength")
+    .forEach((s) => {
+      const monday = getMonday(s.date);
+      const key = monday.toISOString().slice(0, 10);
+      const volume = s.exercises.reduce((sum, ex) => sum + ex.weight * ex.reps, 0);
+      const entry = byWeek.get(key) || { monday, volume: 0 };
+      entry.volume += volume;
+      byWeek.set(key, entry);
+    });
+
+  return Array.from(byWeek.values())
+    .sort((a, b) => a.monday - b.monday)
+    .slice(-12) // senaste 12 veckorna med loggade styrkepass
+    .map((entry) => ({ label: formatWeekLabel(entry.monday), volume: Math.round(entry.volume) }));
+}
+
+function computePersonalRecords(sessions) {
+  const records = new Map(); // övningsnamn -> { maxWeight, maxVolume }
+
+  sessions
+    .filter((s) => (s.type || "strength") === "strength")
+    .forEach((s) => {
+      s.exercises.forEach((ex) => {
+        if (!ex.name) return;
+        const volume = ex.weight * ex.reps;
+        const existing = records.get(ex.name) || { maxWeight: null, maxVolume: null };
+
+        if (!existing.maxWeight || ex.weight > existing.maxWeight.weight) {
+          existing.maxWeight = { weight: ex.weight, reps: ex.reps };
+        }
+        if (!existing.maxVolume || volume > existing.maxVolume.volume) {
+          existing.maxVolume = { weight: ex.weight, reps: ex.reps, volume };
+        }
+
+        records.set(ex.name, existing);
+      });
+    });
+
+  return Array.from(records.entries())
+    .map(([name, r]) => ({ name, ...r }))
+    .sort((a, b) => a.name.localeCompare(b.name, "sv"));
+}
+
+// Senast loggade vikt/reps per övningsnamn, används för att auto-fylla
+// övningsraderna. `sessions` kommer redan sorterad nyast->äldst från
+// loadSessions(), så första träffen per namn är den senaste.
+function computeLastExerciseStats(sessions) {
+  const map = new Map();
+
+  sessions
+    .filter((s) => (s.type || "strength") === "strength")
+    .forEach((s) => {
+      s.exercises.forEach((ex) => {
+        if (!ex.name) return;
+        const key = ex.name.trim().toLowerCase();
+        if (!map.has(key)) {
+          map.set(key, { weight: ex.weight, reps: ex.reps });
+        }
+      });
+    });
+
+  return map;
+}
+
+function renderWeeklyVolumeChart(sessions) {
+  const el = document.getElementById("weekly-volume-chart");
+  const weeks = computeWeeklyVolume(sessions);
+
+  if (weeks.length === 0) {
+    el.innerHTML = `<p class="empty">Inga styrkepass loggade ännu.</p>`;
+    return;
+  }
+
+  const maxVolume = Math.max(...weeks.map((w) => w.volume), 1);
+
+  el.innerHTML = `
+    <div class="volume-chart">
+      ${weeks
+        .map(
+          (w) => `
+            <div class="volume-chart-col">
+              <div class="volume-chart-value">${w.volume.toLocaleString("sv-SE")}</div>
+              <div class="volume-chart-bar" style="height: ${Math.max((w.volume / maxVolume) * 100, 3)}%"></div>
+              <div class="volume-chart-label">${w.label}</div>
+            </div>
+          `
+        )
+        .join("")}
+    </div>
+  `;
+}
+
+function renderPersonalRecords(sessions) {
+  const el = document.getElementById("personal-records");
+  const records = computePersonalRecords(sessions);
+
+  if (records.length === 0) {
+    el.innerHTML = `<p class="empty">Inga styrkeövningar loggade ännu.</p>`;
+    return;
+  }
+
+  const rows = records
+    .map(
+      (r) => `
+        <tr>
+          <td>${r.name}</td>
+          <td>${r.maxWeight.weight} kg × ${r.maxWeight.reps}</td>
+          <td>${r.maxVolume.volume.toLocaleString("sv-SE")} kg (${r.maxVolume.weight} kg × ${r.maxVolume.reps})</td>
+        </tr>
+      `
+    )
+    .join("");
+
+  el.innerHTML = `
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Övning</th>
+            <th>Högsta vikt</th>
+            <th>Högsta volym (ett set)</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderStatistics(sessions) {
+  renderWeeklyVolumeChart(sessions);
+  renderPersonalRecords(sessions);
+}
+
+let lastExerciseStatsByName = new Map();
+
 async function refreshHistoryUI() {
-  await renderHistory();
+  const [sessions, profile] = await Promise.all([loadSessions(), loadProfile()]);
+  lastExerciseStatsByName = computeLastExerciseStats(sessions);
+  renderHistory(sessions, profile);
+  renderStatistics(sessions);
 }
 
 // ---------- Init ----------
