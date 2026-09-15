@@ -5,7 +5,7 @@ Björkekärr (och Hisingen)". Ren HTML/CSS/JS, inget byggsteg – funkar
 både öppnad direkt som `index.html` och hostad på GitHub Pages
 (`https://tompa711.github.io/pumping-iron-bjorkekarr/`). Inget eget
 backend-API - molnlagring (se nedan) går direkt mot Supabase från
-webbläsaren. **Kräver inloggning** (magisk länk via mejl) - inget
+webbläsaren. **Kräver inloggning** (mejl + lösenord) - inget
 gäst-/lokalt läge längre.
 
 ## Design/tema
@@ -24,9 +24,9 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
 
 ## Vad appen gör (v1 + v2 + v3 + v4)
 
-- **Inloggning krävs**: appen visar bara ett inloggningsformulär
-  (magisk länk via mejl) tills man är inloggad. Resten av appen
-  (`#app-content` i `index.html`) är dold fram tills dess.
+- **Inloggning krävs**: appen visar bara inloggnings-/
+  registreringsformulär (mejl + lösenord) tills man är inloggad. Resten
+  av appen (`#app-content` i `index.html`) är dold fram tills dess.
 - **Profil**: Namn, vikt (kg), längd (cm). Sparas i molnet och används
   för att räkna ut BMI och en uppskattning av kaloriförbrukning.
 - **Logga pass**: Datum, passtyp och pass-längd (minuter). Passtyper:
@@ -80,10 +80,21 @@ CRUD går via: `loadProfile()`, `saveProfile()`, `loadSessions()`,
 
 - **Bibliotek**: `@supabase/supabase-js` laddas via CDN
   (jsdelivr, pinnad version) i `index.html` - inget npm/byggsteg.
-- **Inloggning**: magisk länk via mejl (`supabaseClient.auth.signInWithOtp`).
-  Ingen lösenordshantering. `emailRedirectTo` sätts till appens egen URL
-  (`window.location.origin + pathname`) så länken i mejlet tar tillbaka
-  hit.
+- **Inloggning**: mejl + lösenord (`supabaseClient.auth.signInWithPassword` /
+  `.signUp`), med separata formulär för inloggning och registrering på
+  samma sida (`#login-view`/`#signup-view` i `index.html`, växlas via
+  `showLoginView()`/`showSignupView()` i `app.js`).
+  - Lösenord kräver minst 6 tecken (`minlength="6"` client-side, samma
+    minimum som Supabase Auth har som default).
+  - Om **e-postbekräftelse** är påslaget i projektet (default för nya
+    Supabase-projekt) måste man bekräfta mejlen (länk i mejlet) innan
+    man kan logga in efter registrering - `emailRedirectTo` pekar då
+    tillbaka till appens egen URL. Är det avstängt loggas man in direkt
+    efter registrering.
+  - Försöker man registrera en redan existerande, bekräftad mejladress
+    svarar Supabase utan fel men med en tom `identities`-lista (skydd
+    mot att kunna leta reda på registrerade mejladresser) - det
+    hanteras i `signup-form`-hanteraren och visar "logga in istället".
 - **Projekt**: `https://qnezslbbmfsdhsaiuesf.supabase.co`. `anon`-nyckeln
   ligger hårdkodad i `app.js` - det är avsiktligt och säkert **så länge
   RLS-policyn nedan är aktiv**: anon-nyckeln ger bara åtkomst till rader
@@ -136,12 +147,17 @@ create policy "Users manage their own sessions"
 
 - **Authentication → URL Configuration**: lägg till appens
   GitHub Pages-URL (`https://tompa711.github.io/pumping-iron-bjorkekarr/`)
-  som både **Site URL** och i listan **Redirect URLs**. Utan detta
-  vägrar Supabase skicka tillbaka användaren till appen efter klick på
-  den magiska länken.
-- Magisk länk-inloggning **funkar inte** när appen öppnas lokalt via
-  `file://` (Supabase kräver en http(s)-URL för redirect). Testa
-  inloggning via den riktiga GitHub Pages-adressen.
+  som både **Site URL** och i listan **Redirect URLs**. Behövs bara om
+  e-postbekräftelse är påslaget (se ovan) - annars skickas ingen
+  bekräftelselänk alls.
+- **Authentication → Providers → Email → "Confirm email"**: avstängt
+  gör att man loggas in direkt efter registrering (inget mejl skickas
+  alls då, vilket också undviker Supabase inbyggda mejlgräns på
+  2 mejl/timme). Påslaget kräver ett mejl per ny användare (en gång,
+  inte per inloggning) innan de kan logga in.
+- Inloggning/registrering med lösenord funkar även lokalt via `file://`
+  (till skillnad från den gamla magisk länk-lösningen) - bara den
+  eventuella bekräftelselänken i mejlet kräver en riktig http(s)-URL.
 
 ## Beräkningar
 

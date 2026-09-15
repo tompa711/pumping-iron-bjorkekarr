@@ -1,5 +1,5 @@
 // ===================================================================
-// Träningslogg – kräver inloggning (magisk länk via mejl). All data
+// Träningslogg – kräver inloggning (mejl + lösenord). All data
 // läses och sparas direkt mot Supabase, kopplat till det inloggade
 // kontot. Inget lokalt/gäst-läge - #app-content visas först efter
 // inloggning (se updateAuthUI()).
@@ -214,7 +214,24 @@ function computeCaloriesBurned(durationMin, weightKg, type, pace) {
   return Math.round(kcalPerMin * durationMin);
 }
 
-// ---------- Konto: inloggning (magisk länk), utloggning, UI-läge ----------
+// ---------- Konto: inloggning/registrering (mejl + lösenord), UI-läge ----------
+
+function showLoginView() {
+  document.getElementById("login-view").hidden = false;
+  document.getElementById("signup-view").hidden = true;
+  document.getElementById("login-status").textContent = "";
+  document.getElementById("signup-status").textContent = "";
+}
+
+function showSignupView() {
+  document.getElementById("login-view").hidden = true;
+  document.getElementById("signup-view").hidden = false;
+  document.getElementById("login-status").textContent = "";
+  document.getElementById("signup-status").textContent = "";
+}
+
+document.getElementById("show-signup").addEventListener("click", showSignupView);
+document.getElementById("show-login").addEventListener("click", showLoginView);
 
 function updateAuthUI() {
   const loggedOut = document.getElementById("auth-logged-out");
@@ -230,29 +247,74 @@ function updateAuthUI() {
     loggedOut.hidden = false;
     loggedIn.hidden = true;
     appContent.hidden = true;
+    showLoginView(); // börja alltid om på inloggningsvyn, t.ex. efter utloggning
   }
 }
 
-document.getElementById("magic-link-form").addEventListener("submit", async (e) => {
+document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
-  const statusEl = document.getElementById("magic-link-status");
+  const statusEl = document.getElementById("login-status");
 
   if (!supabaseClient) {
     statusEl.textContent = "Kunde inte ladda inloggningen (kolla internetuppkopplingen och ladda om sidan).";
     return;
   }
 
-  const email = document.getElementById("magic-link-email").value.trim();
-  statusEl.textContent = "Skickar länk …";
+  const email = document.getElementById("login-email").value.trim();
+  const password = document.getElementById("login-password").value;
+  statusEl.textContent = "Loggar in …";
 
-  const { error } = await supabaseClient.auth.signInWithOtp({
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    statusEl.textContent = `Något gick fel: ${error.message}`;
+  } else {
+    document.getElementById("login-password").value = "";
+  }
+  // Lyckad inloggning triggar onAuthStateChange -> updateAuthUI() visar appen.
+});
+
+document.getElementById("signup-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("signup-status");
+
+  if (!supabaseClient) {
+    statusEl.textContent = "Kunde inte ladda registreringen (kolla internetuppkopplingen och ladda om sidan).";
+    return;
+  }
+
+  const email = document.getElementById("signup-email").value.trim();
+  const password = document.getElementById("signup-password").value;
+  statusEl.textContent = "Skapar konto …";
+
+  const { data, error } = await supabaseClient.auth.signUp({
     email,
+    password,
     options: { emailRedirectTo: window.location.origin + window.location.pathname },
   });
 
-  statusEl.textContent = error
-    ? `Något gick fel: ${error.message}`
-    : "Länk skickad! Kolla din mejl och klicka på länken för att logga in.";
+  if (error) {
+    statusEl.textContent = `Något gick fel: ${error.message}`;
+    return;
+  }
+
+  document.getElementById("signup-password").value = "";
+
+  // Supabase svarar med en "tom" identities-lista (utan fel) om mejlen
+  // redan har ett bekräftat konto, som skydd mot att kunna leta reda på
+  // vilka mejladresser som är registrerade.
+  if (data.user && data.user.identities && data.user.identities.length === 0) {
+    statusEl.textContent = "Det finns redan ett konto med den mejladressen. Logga in istället.";
+    return;
+  }
+
+  if (data.session) {
+    // E-postbekräftelse avstängd i projektet - man är redan inloggad.
+    // onAuthStateChange tar hand om resten.
+    return;
+  }
+
+  statusEl.textContent = "Konto skapat! Kolla din mejl och bekräfta kontot, logga sedan in.";
 });
 
 document.getElementById("sign-out-btn").addEventListener("click", async () => {
@@ -641,9 +703,10 @@ resetSessionForm(); // sätter startläge: tom övningsrad, dagens datum, "styrk
 
 // onAuthStateChange fyrar ett "INITIAL_SESSION"-event direkt vid start
 // (med ev. redan inloggad session), och sedan "SIGNED_IN"/"SIGNED_OUT" när
-// man loggar in/ut - inklusive när man klickar på den magiska länken i
-// mejlet och kommer tillbaka hit. Det är alltså den enda platsen vi
-// behöver trigga om profil/historik ska laddas om.
+// man loggar in/ut - inklusive om e-postbekräftelse är påslaget och man
+// klickar på bekräftelselänken i mejlet och kommer tillbaka hit. Det är
+// alltså den enda platsen vi behöver trigga om profil/historik ska
+// laddas om.
 supabaseClient?.auth.onAuthStateChange(async (event, session) => {
   currentUser = session ? session.user : null;
   updateAuthUI();

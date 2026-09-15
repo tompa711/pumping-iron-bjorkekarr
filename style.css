@@ -221,6 +221,21 @@ button.danger-link {
 
 button.danger-link:hover { text-decoration: underline; background: none; }
 
+button.link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent-bright);
+  font-weight: 600;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+button.link-btn:hover {
+  background: none;
+  color: var(--accent);
+}
+
 .exercise-row {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr auto;

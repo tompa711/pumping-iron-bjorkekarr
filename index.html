@@ -29,18 +29,45 @@
       <h2>Konto</h2>
 
       <div id="auth-logged-out">
-        <p class="hint">
-          Logga in med din mejl för att använda appen. Din träningsdata
-          sparas i molnet (Supabase), kopplat till ditt konto.
-        </p>
-        <form id="magic-link-form" class="form-grid">
-          <label>
-            E-post
-            <input type="email" id="magic-link-email" placeholder="din@mejl.se" required>
-          </label>
-          <button type="submit">Skicka inloggningslänk</button>
-        </form>
-        <p id="magic-link-status" class="hint"></p>
+        <div id="login-view">
+          <p class="hint">Logga in med din mejl och ditt lösenord.</p>
+          <form id="login-form" class="form-grid">
+            <label>
+              E-post
+              <input type="email" id="login-email" placeholder="din@mejl.se" required>
+            </label>
+            <label>
+              Lösenord
+              <input type="password" id="login-password" required>
+            </label>
+            <button type="submit">Logga in</button>
+          </form>
+          <p id="login-status" class="hint"></p>
+          <p class="hint">
+            Inget konto än?
+            <button type="button" id="show-signup" class="link-btn">Registrera dig</button>
+          </p>
+        </div>
+
+        <div id="signup-view" hidden>
+          <p class="hint">Skapa ett konto med mejl och lösenord (minst 6 tecken).</p>
+          <form id="signup-form" class="form-grid">
+            <label>
+              E-post
+              <input type="email" id="signup-email" placeholder="din@mejl.se" required>
+            </label>
+            <label>
+              Lösenord
+              <input type="password" id="signup-password" minlength="6" required>
+            </label>
+            <button type="submit">Skapa konto</button>
+          </form>
+          <p id="signup-status" class="hint"></p>
+          <p class="hint">
+            Har du redan ett konto?
+            <button type="button" id="show-login" class="link-btn">Logga in</button>
+          </p>
+        </div>
       </div>
 
       <div id="auth-logged-in" hidden>
