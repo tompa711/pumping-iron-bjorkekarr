@@ -21,6 +21,9 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
 - Headern (`.poster` i `style.css`) har en cirkulär "PI"-badge, titel
   och undertext, ovanpå en mörk panel med ett subtilt guld-kryssmönster
   (`.poster::before`) som en nick till vattenmärket på inspirationsbilden.
+- App-ikonen (för "Lägg till på hemskärmen", se `manifest.json` och
+  `apple-touch-icon.png`/`icon-512.png`) återanvänder exakt samma
+  badge-design.
 
 ## Vad appen gör (v1 + v2 + v3 + v4)
 
@@ -261,6 +264,13 @@ behövs. Klickar man på ett förslag fylls namnet i automatiskt.
 - `index.html` – sidstruktur och formulär
 - `style.css` – utseende
 - `app.js` – all logik: auth, Supabase-lagring, beräkningar, rendering
+- `manifest.json` – webbappmanifest (namn, färgtema, ikoner) för
+  "Lägg till på hemskärmen"
+- `apple-touch-icon.png` (180×180) / `icon-512.png` (512×512) – app-ikon,
+  samma design som "PI"-badgen i headern (mörk cirkel, guld-ring, guld
+  "PI" i Bebas Neue). Genererade med headless Chrome från en HTML/CSS-
+  källa (inte sparad i repot) som återskapar `.brand-badge`-stilen i
+  `style.css`, uppskalad till fasta pixelmått.
 - `CLAUDE.md` – den här filen
 
 Vanilla JS + `@supabase/supabase-js` via CDN. Inget npm, inget
