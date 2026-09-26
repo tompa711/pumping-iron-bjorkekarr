@@ -446,10 +446,180 @@ async function searchWgerExercises(term, signal) {
       const english = translations.find((t) => t.language === WGER_LANGUAGE_ID.en);
       const match = swedish || english;
       if (!match) return null;
-      return { name: match.name, category: ex.category ? ex.category.name : "" };
+
+      // Svensk översättning har ofta bara namn men ingen beskrivning -
+      // fall då tillbaka på den engelska beskrivningen.
+      const description =
+        [match, swedish, english].find((t) => t && t.description && t.description.trim())
+          ?.description || "";
+
+      const images = ex.images || [];
+      const mainImage = images.find((img) => img.is_main) || images[0];
+
+      return {
+        name: match.name,
+        category: ex.category ? ex.category.name : "",
+        equipment: (ex.equipment || []).map((eq) => eq.name),
+        description,
+        image: mainImage
+          ? {
+              url: (mainImage.thumbnails && mainImage.thumbnails.medium) || mainImage.image,
+              author: mainImage.license_author || "",
+            }
+          : null,
+      };
     })
     .filter(Boolean);
 }
+
+// ---------- Infokort för vald wger-övning (bild + instruktioner) ----------
+
+// wger:s beskrivningar är HTML skriven av användare, så vi bygger om den
+// med bara ofarliga formateringstaggar - allt annat (script, attribut,
+// länkar, bilder osv.) blir ren text.
+const WGER_ALLOWED_TAGS = new Set(["P", "UL", "OL", "LI", "EM", "STRONG", "B", "I", "BR"]);
+
+function sanitizeWgerHtml(html) {
+  const source = new DOMParser().parseFromString(html, "text/html").body;
+  const fragment = document.createDocumentFragment();
+
+  function copyChildren(from, to) {
+    from.childNodes.forEach((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        to.appendChild(document.createTextNode(node.textContent));
+      } else if (node.nodeType === Node.ELEMENT_NODE) {
+        if (WGER_ALLOWED_TAGS.has(node.tagName)) {
+          const clean = document.createElement(node.tagName.toLowerCase());
+          copyChildren(node, clean);
+          to.appendChild(clean);
+        } else {
+          copyChildren(node, to);
+        }
+      }
+    });
+  }
+
+  copyChildren(source, fragment);
+  return fragment;
+}
+
+const EXERCISE_INFO_EMPTY_TEXT = "Ingen visning finns tillgänglig i databasen.";
+
+// `emptyText` visas när övningen varken har bild eller beskrivning
+// (används även för "Hämtar..." och felmeddelanden).
+function showExerciseInfo(exercise, emptyText = EXERCISE_INFO_EMPTY_TEXT) {
+  const dialog = document.getElementById("exercise-info");
+  const figure = document.getElementById("exercise-info-figure");
+  const img = document.getElementById("exercise-info-img");
+  const credit = document.getElementById("exercise-info-credit");
+  const meta = document.getElementById("exercise-info-meta");
+  const desc = document.getElementById("exercise-info-desc");
+  const empty = document.getElementById("exercise-info-empty");
+
+  document.getElementById("exercise-info-title").textContent = exercise.name;
+  empty.textContent = emptyText;
+
+  const metaParts = [exercise.category, ...exercise.equipment].filter(Boolean);
+  meta.textContent = metaParts.join(" · ");
+  meta.hidden = metaParts.length === 0;
+
+  const descFragment = exercise.description ? sanitizeWgerHtml(exercise.description) : null;
+  const hasDescription = !!descFragment && descFragment.textContent.trim() !== "";
+  desc.replaceChildren(...(hasDescription ? [descFragment] : []));
+  desc.hidden = !hasDescription;
+
+  function updateEmptyState() {
+    empty.hidden = !(figure.hidden && desc.hidden);
+  }
+
+  if (exercise.image) {
+    figure.hidden = false;
+    img.alt = exercise.name;
+    img.onerror = () => {
+      // Trasig bildlänk: dölj bilden istället för att visa en trasig ikon.
+      figure.hidden = true;
+      updateEmptyState();
+    };
+    img.src = exercise.image.url;
+    credit.textContent = exercise.image.author
+      ? `Bild: ${exercise.image.author} via wger.de`
+      : "Bild via wger.de";
+  } else {
+    figure.hidden = true;
+    img.removeAttribute("src");
+  }
+
+  updateEmptyState();
+  if (!dialog.open) dialog.showModal();
+}
+
+// "Visa övning"-knappen visar övningen på den rad man senast var i. Valde
+// man ett wger-förslag på raden återanvänds det svaret direkt; annars
+// (namn inskrivet för hand, eller inladdat vid redigering) slås namnet
+// upp hos wger och måste matcha exakt (skiftlägesokänsligt).
+const wgerExerciseByRow = new WeakMap();
+let activeExerciseRow = null;
+let exerciseInfoRequestId = 0;
+
+function emptyExerciseInfo(name) {
+  return { name, category: "", equipment: [], description: "", image: null };
+}
+
+async function findWgerExerciseByName(name) {
+  const results = await searchWgerExercises(name);
+  const wanted = name.toLowerCase();
+  return results.find((r) => r.name.trim().toLowerCase() === wanted) || null;
+}
+
+function exerciseRowForInfoButton() {
+  const rows = [...document.querySelectorAll("#exercise-rows .exercise-row")];
+  const hasName = (row) => row.querySelector(".ex-name").value.trim() !== "";
+  if (activeExerciseRow && rows.includes(activeExerciseRow) && hasName(activeExerciseRow)) {
+    return activeExerciseRow;
+  }
+  return rows.reverse().find(hasName) || null;
+}
+
+document.getElementById("show-exercise-info").addEventListener("click", async () => {
+  const requestId = ++exerciseInfoRequestId;
+  const row = exerciseRowForInfoButton();
+
+  if (!row) {
+    showExerciseInfo(emptyExerciseInfo("Ingen övning vald"), "Skriv in eller välj en övning först.");
+    return;
+  }
+
+  const name = row.querySelector(".ex-name").value.trim();
+  const cached = wgerExerciseByRow.get(row);
+  if (cached) {
+    showExerciseInfo(cached);
+    return;
+  }
+
+  showExerciseInfo(emptyExerciseInfo(name), "Hämtar från wger.de…");
+  try {
+    const found = await findWgerExerciseByName(name);
+    // Hann man stänga och öppna en annan övning under tiden ska det här
+    // svaret inte skriva över den.
+    if (requestId !== exerciseInfoRequestId) return;
+    if (found) wgerExerciseByRow.set(row, found);
+    showExerciseInfo(found || emptyExerciseInfo(name));
+  } catch {
+    if (requestId !== exerciseInfoRequestId) return;
+    showExerciseInfo(emptyExerciseInfo(name), "Kunde inte nå wger.de just nu.");
+  }
+});
+
+(function wireExerciseInfoDialog() {
+  const dialog = document.getElementById("exercise-info");
+  // Stängs kortet medan en uppslagning pågår ska svaret inte öppna det igen.
+  dialog.addEventListener("close", () => exerciseInfoRequestId++);
+  document.getElementById("exercise-info-close").addEventListener("click", () => dialog.close());
+  // Klick på den mörka bakgrunden utanför kortet stänger också.
+  dialog.addEventListener("click", (e) => {
+    if (e.target === dialog) dialog.close();
+  });
+})();
 
 function wireExerciseAutocomplete(row) {
   const input = row.querySelector(".ex-name");
@@ -483,29 +653,43 @@ function wireExerciseAutocomplete(row) {
       return;
     }
 
-    list.innerHTML = results
-      .map(
-        (r, i) =>
-          `<li data-index="${i}">${r.name}${r.category ? ` <span class="ex-suggestion-cat">(${r.category})</span>` : ""}</li>`
-      )
-      .join("");
+    // Byggs med textContent (inte innerHTML) eftersom namnen kommer från
+    // wger:s användarskrivna data.
+    list.replaceChildren(
+      ...results.map((r) => {
+        const li = document.createElement("li");
+        li.textContent = r.name;
+        if (r.category) {
+          const cat = document.createElement("span");
+          cat.className = "ex-suggestion-cat";
+          cat.textContent = ` (${r.category})`;
+          li.appendChild(cat);
+        }
+        // mousedown (inte click) så den hinner köras innan inputens
+        // blur-händelse döljer listan.
+        li.addEventListener("mousedown", (e) => {
+          e.preventDefault();
+          input.value = r.name;
+          hideSuggestions();
+          autofillFromHistory(r.name);
+          wgerExerciseByRow.set(row, r);
+          activeExerciseRow = row;
+        });
+        return li;
+      })
+    );
     list.hidden = false;
-
-    list.querySelectorAll("li").forEach((li, i) => {
-      // mousedown (inte click) så den hinner köras innan inputens
-      // blur-händelse döljer listan.
-      li.addEventListener("mousedown", (e) => {
-        e.preventDefault();
-        input.value = results[i].name;
-        hideSuggestions();
-        autofillFromHistory(results[i].name);
-      });
-    });
   }
+
+  input.addEventListener("focus", () => {
+    activeExerciseRow = row;
+  });
 
   input.addEventListener("input", () => {
     const term = input.value.trim();
     clearTimeout(debounceTimer);
+    // Namnet har ändrats - ett tidigare valt wger-förslag gäller inte längre.
+    wgerExerciseByRow.delete(row);
 
     if (term.length < 2) {
       hideSuggestions();

@@ -323,6 +323,82 @@ button.link-btn:hover {
   font-size: 0.8em;
 }
 
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* Infokort (modal) för vald wger-övning */
+.exercise-info {
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  padding: 0;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+}
+
+.exercise-info::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.exercise-info-inner {
+  padding: 20px;
+}
+
+.exercise-info-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.exercise-info-header h2 {
+  margin: 0;
+}
+
+.exercise-info .hint {
+  margin-top: 4px;
+}
+
+.exercise-info figure {
+  margin: 0 0 16px;
+}
+
+.exercise-info img {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  /* wger:s bilder är ofta svarta streckteckningar på transparent/vit
+     bakgrund - en ljus platta gör att de syns mot det mörka temat. */
+  background: #f2efe9;
+  border-radius: 8px;
+}
+
+.exercise-info figcaption {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.exercise-info-desc {
+  font-size: 0.9rem;
+}
+
+.exercise-info-desc p {
+  margin: 0 0 10px;
+}
+
+.exercise-info-desc ul,
+.exercise-info-desc ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+
 .submit-row {
   margin-top: 16px;
 }

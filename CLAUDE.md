@@ -249,6 +249,27 @@ behövs. Klickar man på ett förslag fylls namnet i automatiskt.
   (`translations`-listan). Vi väljer svenska (`language: 10`) om den
   finns, annars engelska (`language: 2`) – aldrig något annat språk,
   så listan inte blandar in tyska/franska/etc. namn.
+- **"Visa övning"-knappen** (bredvid "+ Lägg till övning") öppnar ett
+  modalt infokort (`<dialog id="exercise-info">` i `index.html`,
+  `showExerciseInfo()` i `app.js`) med kategori/utrustning, huvudbild
+  (`is_main`, annars första bilden; medium-miniatyren) med
+  fotograf-kredit, och instruktionstexten.
+  - Visar övningen på raden man senast fokuserade/valde förslag på
+    (`activeExerciseRow`), annars sista raden med ett namn.
+  - Valde man ett wger-förslag på raden återanvänds det svaret
+    (`wgerExerciseByRow`, nollställs när namnet ändras) - ingen extra
+    fråga. Annars (handskrivet namn, eller pass som redigeras) slås
+    namnet upp via `findWgerExerciseByName()`, som kräver exakt
+    (skiftlägesokänslig) namnträff bland sökresultaten.
+  - Ingen träff, eller varken bild eller text: kortet visar "Ingen
+    visning finns tillgänglig i databasen."
+  - Beskrivningen tas från samma språk som namnet, men faller tillbaka
+    på engelska om den svenska översättningen saknar beskrivning.
+  - wger:s beskrivningar är användarskriven HTML och byggs därför om
+    via `sanitizeWgerHtml()` med bara ofarliga formateringstaggar
+    (p, ul/ol/li, em/strong, br) - allt annat blir ren text.
+  - Många övningar saknar bild (och vissa beskrivning): då visas bara
+    det som finns. Trasiga bildlänkar döljs också (`onerror`).
 - **Viktigt att veta**: wger:s databas har väldigt få övningar med
   svensk översättning (endast ett fåtal av totalt ~860 övningar, mot
   nästan alla på engelska). I praktiken blir nästan alla sökförslag

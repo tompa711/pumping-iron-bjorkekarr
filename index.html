@@ -188,7 +188,10 @@
           <div id="strength-section">
             <h3>Övningar i passet</h3>
             <div id="exercise-rows"></div>
-            <button type="button" id="add-exercise-row" class="secondary">+ Lägg till övning</button>
+            <div class="button-row">
+              <button type="button" id="add-exercise-row" class="secondary">+ Lägg till övning</button>
+              <button type="button" id="show-exercise-info" class="secondary">Visa övning</button>
+            </div>
           </div>
 
           <div class="submit-row">
@@ -222,6 +225,23 @@
       </section>
     </div>
   </div>
+
+  <!-- ===== INFOKORT FÖR VALD ÖVNING (wger.de) ===== -->
+  <dialog id="exercise-info" class="exercise-info" aria-labelledby="exercise-info-title">
+    <div class="exercise-info-inner">
+      <div class="exercise-info-header">
+        <h2 id="exercise-info-title"></h2>
+        <button type="button" id="exercise-info-close" class="secondary" aria-label="Stäng">✕</button>
+      </div>
+      <p id="exercise-info-meta" class="hint"></p>
+      <figure id="exercise-info-figure">
+        <img id="exercise-info-img" alt="">
+        <figcaption id="exercise-info-credit"></figcaption>
+      </figure>
+      <div id="exercise-info-desc" class="exercise-info-desc"></div>
+      <p id="exercise-info-empty" class="hint" hidden></p>
+    </div>
+  </dialog>
 
   <script src="app.js"></script>
 </body>
