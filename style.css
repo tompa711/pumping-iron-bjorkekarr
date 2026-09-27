@@ -393,6 +393,10 @@ button.link-btn:hover {
   white-space: nowrap;
 }
 
+.wc-tooltip[hidden] {
+  display: none; /* annars vinner display: flex ovan över hidden-attributet */
+}
+
 .wc-tooltip span {
   color: var(--muted);
 }
@@ -572,6 +576,7 @@ tr.has-note td {
 
 .volume-chart-bar {
   width: 100%;
+  height: var(--pct); /* satt inline per stapel i renderWeeklyBarChart() */
   max-width: 28px;
   background: var(--accent);
   border-radius: 4px 4px 0 0;
@@ -590,4 +595,138 @@ tr.has-note td {
   color: var(--muted);
   margin-top: 6px;
   white-space: nowrap;
+}
+
+/* Enheten får inte plats ovanför de smala stående staplarna - den står i
+   rubriken istället, och visas bara i mobilens liggande variant. */
+.volume-chart-unit {
+  display: none;
+}
+
+/* ---------- Mobil: kort istället för tabeller, liggande staplar ----------
+   Tabellerna är minst 640px breda och ryms inte i kortet under ca 720px
+   skärmbredd. Där blir varje post (<tbody>) istället ett eget litet kort
+   med etikett (data-label) framför varje värde. */
+@media (max-width: 720px) {
+  .table-scroll {
+    overflow-x: visible;
+  }
+
+  .responsive-table,
+  .responsive-table tbody,
+  .responsive-table tr,
+  .responsive-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Rubrikraden behövs inte visuellt (etiketterna tar över), men göms
+     bara visuellt så skärmläsare fortfarande hittar den. */
+  .responsive-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+
+  /* Raderna "löses upp" (display: contents) så att alla celler i posten,
+     inklusive ev. anteckningsrad, blir syskon i kortet - då kan
+     knapparna läggas sist, under anteckningen. */
+  .responsive-table tr {
+    display: contents;
+  }
+
+  .responsive-table tbody {
+    display: flex;
+    flex-direction: column;
+    background: #1f1e1a;
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    padding: 8px 12px;
+    margin-bottom: 10px;
+  }
+
+  .responsive-table td {
+    display: grid;
+    grid-template-columns: 6.5rem minmax(0, 1fr);
+    gap: 8px;
+    padding: 4px 0;
+    border-bottom: none;
+    overflow-wrap: anywhere; /* långa övningsnamn bryts istället för att klippas */
+  }
+
+  .responsive-table td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.8rem;
+  }
+
+  .responsive-table td.is-empty {
+    display: none;
+  }
+
+  .responsive-table td.cell-actions {
+    display: flex;
+    order: 1;
+    gap: 8px;
+    padding-top: 10px;
+  }
+
+  .responsive-table td.cell-actions::before,
+  .responsive-table .note-row td::before {
+    content: none;
+  }
+
+  .responsive-table .note-row td {
+    display: block;
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Veckograferna: 12 stående staplar ryms inte med läsbara värden, så de
+     blir liggande - vecka till vänster, stapel, värde till höger. */
+  .volume-chart {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 4px;
+    height: auto;
+    overflow-x: visible;
+  }
+
+  .volume-chart-col {
+    display: grid;
+    grid-template-columns: 3rem minmax(0, 1fr) auto;
+    grid-template-areas: "label bar value";
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    height: auto;
+  }
+
+  .volume-chart-label {
+    grid-area: label;
+    margin-top: 0;
+  }
+
+  .volume-chart-bar {
+    grid-area: bar;
+    justify-self: start;
+    width: var(--pct);
+    max-width: none;
+    height: 14px;
+    border-radius: 0 4px 4px 0;
+  }
+
+  .volume-chart-unit {
+    display: inline;
+  }
+
+  .volume-chart-value {
+    grid-area: value;
+    margin-bottom: 0;
+    font-size: 0.75rem;
+  }
 }

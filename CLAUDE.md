@@ -21,6 +21,18 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
 - Headern (`.poster` i `style.css`) har en cirkulär "PI"-badge, titel
   och undertext, ovanpå en mörk panel med ett subtilt guld-kryssmönster
   (`.poster::before`) som en nick till vattenmärket på inspirationsbilden.
+- **Mobil/responsivitet**: inget ska kräva sidledsskrollning på en
+  telefon (testat vid 360px). Under 720px (`@media (max-width: 720px)`
+  i `style.css`):
+  - Tabellerna (historik, personliga rekord, viktloggar) har klassen
+    `.responsive-table` och visas som ett kort per post. Varje post
+    ligger i en egen `<tbody>` (passet + ev. anteckningsrad = ett kort),
+    och varje cell byggs med `responsiveCell(label, content)` i `app.js`
+    som sätter `data-label` (visas som etikett i kortläget) och döljer
+    tomma "–"-värden. Knapparna byggs med `actionCell(id)` och läggs
+    sist i kortet. Ny tabell = använd samma helpers + klass.
+  - Veckograferna blir liggande staplar (stapelns längd styrs av CSS-
+    variabeln `--pct`, som på bred skärm istället styr höjden).
 - App-ikonen (för "Lägg till på hemskärmen", se `manifest.json` och
   `apple-touch-icon.png`/`icon-512.png`) återanvänder exakt samma
   badge-design.
@@ -226,9 +238,8 @@ create policy "Users manage their own sessions"
   with check (auth.uid() = user_id);
 ```
 
-Kroppsviktstabellen (skapad i efterhand, samma mönster). Tabellen är
-skapad; RLS-delen har Claude inte kunnat verifiera (anon-nyckeln ser
-en tom lista både med RLS och på en tom tabell utan RLS):
+Kroppsviktstabellen (skapad i efterhand, samma mönster). Tabellen,
+RLS och policyn är skapade och verifierade i dashboarden (2026-09-27):
 
 ```sql
 create table public.body_weight_logs (

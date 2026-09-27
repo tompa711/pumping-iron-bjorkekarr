@@ -937,6 +937,24 @@ function escapeHtml(text) {
     .replaceAll("'", "&#39;");
 }
 
+// Tabellerna (historik, personliga rekord, viktloggar) visas som tabell på
+// bred skärm och som ett kort per post på mobil (se `.responsive-table` i
+// style.css). Varje post ligger i en egen <tbody> så att den kan bli ett
+// kort, och varje cell får sin kolumnrubrik som `data-label` - den visas
+// som etikett framför värdet i kortläget. Tomma värden ("–") döljs där.
+function responsiveCell(label, content) {
+  const emptyClass = content === "–" ? ' class="is-empty"' : "";
+  return `<td data-label="${label}"${emptyClass}>${content}</td>`;
+}
+
+function actionCell(id) {
+  return `
+    <td class="cell-actions">
+      <button class="secondary edit-link" data-id="${id}">Redigera</button>
+      <button class="danger-link" data-id="${id}">Ta bort</button>
+    </td>`;
+}
+
 async function deleteSession(id) {
   await removeSession(id);
   await refreshHistoryUI();
@@ -977,26 +995,25 @@ function renderHistory(allSessions, profile) {
         : "";
 
       return `
-        <tr${s.notes ? ' class="has-note"' : ""}>
-          <td>${s.date}</td>
-          <td>${SESSION_TYPE_LABELS[type] || type}</td>
-          <td>${s.durationMin} min</td>
-          <td>${pace}</td>
-          <td>${details}</td>
-          <td>${calories}</td>
-          <td>
-            <button class="secondary edit-link" data-id="${s.id}">Redigera</button>
-            <button class="danger-link" data-id="${s.id}">Ta bort</button>
-          </td>
-        </tr>
-        ${noteRow}
+        <tbody>
+          <tr${s.notes ? ' class="has-note"' : ""}>
+            ${responsiveCell("Datum", s.date)}
+            ${responsiveCell("Typ", SESSION_TYPE_LABELS[type] || type)}
+            ${responsiveCell("Längd", `${s.durationMin} min`)}
+            ${responsiveCell("Tempo/fart", pace)}
+            ${responsiveCell("Övningar", details)}
+            ${responsiveCell("Kalorier", calories)}
+            ${actionCell(s.id)}
+          </tr>
+          ${noteRow}
+        </tbody>
       `;
     })
     .join("");
 
   el.innerHTML = `
     <div class="table-scroll">
-      <table>
+      <table class="responsive-table">
         <thead>
           <tr>
             <th>Datum</th>
@@ -1008,7 +1025,7 @@ function renderHistory(allSessions, profile) {
             <th></th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        ${rows}
       </table>
     </div>
   `;
@@ -1170,7 +1187,10 @@ function computeLastExerciseStats(sessions) {
   return map;
 }
 
-function renderWeeklyBarChart(elementId, weeks, emptyMessage, formatValue) {
+// `unit` visas efter värdet bara på mobil (liggande staplar, gott om
+// plats). På bred skärm är staplarna för smala för t.ex. "1 966 kcal", så
+// där visas bara siffran och enheten står i grafens rubrik istället.
+function renderWeeklyBarChart(elementId, weeks, emptyMessage, unit) {
   const el = document.getElementById(elementId);
 
   if (weeks.length === 0) {
@@ -1186,8 +1206,8 @@ function renderWeeklyBarChart(elementId, weeks, emptyMessage, formatValue) {
         .map(
           (w) => `
             <div class="volume-chart-col">
-              <div class="volume-chart-value">${formatValue(w.value)}</div>
-              <div class="volume-chart-bar" style="height: ${Math.max((w.value / maxValue) * 100, 3)}%"></div>
+              <div class="volume-chart-value">${w.value.toLocaleString("sv-SE")}<span class="volume-chart-unit"> ${unit}</span></div>
+              <div class="volume-chart-bar" style="--pct: ${Math.max((w.value / maxValue) * 100, 3)}%"></div>
               <div class="volume-chart-label">${w.label}</div>
             </div>
           `
@@ -1203,7 +1223,7 @@ function renderWeeklyMinutesChart(sessions) {
     "weekly-minutes-chart",
     weeks,
     "Inga pass loggade ännu.",
-    (v) => `${v.toLocaleString("sv-SE")} min`
+    "min"
   );
 }
 
@@ -1221,7 +1241,7 @@ function renderWeeklyCaloriesChart(sessions, profile) {
     "weekly-calories-chart",
     weeks,
     "Inga pass loggade ännu.",
-    (v) => `${v.toLocaleString("sv-SE")} kcal`
+    "kcal"
   );
 }
 
@@ -1237,18 +1257,20 @@ function renderPersonalRecords(sessions) {
   const rows = records
     .map(
       (r) => `
-        <tr>
-          <td>${r.name}</td>
-          <td>${r.maxWeight.weight} kg × ${r.maxWeight.reps}</td>
-          <td>${r.maxVolume.volume.toLocaleString("sv-SE")} kg (${r.maxVolume.weight} kg × ${r.maxVolume.reps})</td>
-        </tr>
+        <tbody>
+          <tr>
+            ${responsiveCell("Övning", escapeHtml(r.name))}
+            ${responsiveCell("Högsta vikt", `${r.maxWeight.weight} kg × ${r.maxWeight.reps}`)}
+            ${responsiveCell("Högsta volym", `${r.maxVolume.volume.toLocaleString("sv-SE")} kg (${r.maxVolume.weight} kg × ${r.maxVolume.reps})`)}
+          </tr>
+        </tbody>
       `
     )
     .join("");
 
   el.innerHTML = `
     <div class="table-scroll">
-      <table>
+      <table class="responsive-table">
         <thead>
           <tr>
             <th>Övning</th>
@@ -1256,7 +1278,7 @@ function renderPersonalRecords(sessions) {
             <th>Högsta volym (ett set)</th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        ${rows}
       </table>
     </div>
   `;
@@ -1510,22 +1532,21 @@ function renderWeightHistory(logsDesc) {
       const previous = logsDesc[i + 1]; // listan är nyast först
       const change = previous ? formatSignedKg(log.weightKg - previous.weightKg) : "–";
       return `
-        <tr>
-          <td>${log.date}</td>
-          <td>${log.weightKg.toFixed(1)} kg</td>
-          <td>${change}</td>
-          <td>
-            <button class="secondary edit-link" data-id="${log.id}">Redigera</button>
-            <button class="danger-link" data-id="${log.id}">Ta bort</button>
-          </td>
-        </tr>
+        <tbody>
+          <tr>
+            ${responsiveCell("Datum", log.date)}
+            ${responsiveCell("Vikt", `${log.weightKg.toFixed(1)} kg`)}
+            ${responsiveCell("Förändring", change)}
+            ${actionCell(log.id)}
+          </tr>
+        </tbody>
       `;
     })
     .join("");
 
   el.innerHTML = `
     <div class="table-scroll">
-      <table>
+      <table class="responsive-table">
         <thead>
           <tr>
             <th>Datum</th>
@@ -1534,7 +1555,7 @@ function renderWeightHistory(logsDesc) {
             <th></th>
           </tr>
         </thead>
-        <tbody>${rows}</tbody>
+        ${rows}
       </table>
     </div>
   `;
