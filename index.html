@@ -14,7 +14,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <!-- ?v= tvingar hemskärmsappen att hämta nya filer efter en uppdatering - bumpa vid varje ändring av style.css/app.js (se CLAUDE.md). -->
+  <link rel="stylesheet" href="style.css?v=2026-09-27.1">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
 </head>
 <body>
@@ -29,10 +30,14 @@
           <p class="brand-sub">(och Hisingen) &middot; Träningslogg</p>
         </div>
       </div>
+      <a href="#profil" id="profile-btn" class="profile-btn" data-view-link="profil"
+         aria-label="Profil och konto" title="Profil och konto" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/></svg>
+      </a>
     </header>
 
-    <!-- ===== KONTO / INLOGGNING ===== -->
-    <section class="card">
+    <!-- ===== INLOGGNING (bara synlig när man är utloggad) ===== -->
+    <section class="card" id="account-card">
       <h2>Konto</h2>
 
       <div id="auth-logged-out">
@@ -41,11 +46,11 @@
           <form id="login-form" class="form-grid">
             <label>
               E-post
-              <input type="email" id="login-email" placeholder="din@mejl.se" required>
+              <input type="email" id="login-email" name="email" autocomplete="username" placeholder="din@mejl.se" required>
             </label>
             <label>
               Lösenord
-              <input type="password" id="login-password" required>
+              <input type="password" id="login-password" name="password" autocomplete="current-password" required>
             </label>
             <button type="submit">Logga in</button>
           </form>
@@ -63,11 +68,11 @@
           <form id="signup-form" class="form-grid">
             <label>
               E-post
-              <input type="email" id="signup-email" placeholder="din@mejl.se" required>
+              <input type="email" id="signup-email" name="email" autocomplete="username" placeholder="din@mejl.se" required>
             </label>
             <label>
               Lösenord
-              <input type="password" id="signup-password" minlength="6" required>
+              <input type="password" id="signup-password" name="new-password" autocomplete="new-password" minlength="6" required>
             </label>
             <button type="submit">Skapa konto</button>
           </form>
@@ -83,7 +88,7 @@
           <form id="forgot-form" class="form-grid">
             <label>
               E-post
-              <input type="email" id="forgot-email" placeholder="din@mejl.se" required>
+              <input type="email" id="forgot-email" name="email" autocomplete="username" placeholder="din@mejl.se" required>
             </label>
             <button type="submit">Skicka återställningslänk</button>
           </form>
@@ -95,13 +100,6 @@
         </div>
       </div>
 
-      <div id="auth-logged-in" hidden>
-        <p class="hint">
-          Inloggad som <strong id="auth-user-email"></strong> &middot;
-          data synkas till molnet.
-        </p>
-        <button type="button" id="sign-out-btn" class="secondary">Logga ut</button>
-      </div>
     </section>
 
     <!-- ===== SÄTT NYTT LÖSENORD (efter klick på återställningslänk i mejlet) ===== -->
@@ -109,9 +107,13 @@
       <h2>Välj nytt lösenord</h2>
       <p class="hint">Ange ett nytt lösenord (minst 6 tecken) för ditt konto.</p>
       <form id="reset-password-form" class="form-grid">
+        <!-- Dolt användarnamn så att lösenordshanteraren (iCloud-nyckelringen
+             m.fl.) vet vilket konto det nya lösenordet hör till. Fylls i
+             updateAuthUI(). -->
+        <input type="email" id="reset-username" name="email" autocomplete="username" hidden>
         <label>
           Nytt lösenord
-          <input type="password" id="reset-password-new" minlength="6" required>
+          <input type="password" id="reset-password-new" name="new-password" autocomplete="new-password" minlength="6" required>
         </label>
         <button type="submit">Spara nytt lösenord</button>
       </form>
@@ -119,8 +121,28 @@
     </section>
 
     <div id="app-content" hidden>
+      <!-- ===== FLIKAR (fast längst ner på mobil, överst på dator) ===== -->
+      <nav class="tab-bar" aria-label="Vyer">
+        <a href="#logga" class="tab-btn" data-view-link="logga">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>
+          <span>Logga</span>
+        </a>
+        <a href="#historik" class="tab-btn" data-view-link="historik">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>
+          <span>Historik</span>
+        </a>
+        <a href="#statistik" class="tab-btn" data-view-link="statistik">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 20V11M12 20V4M19 20v-6"/></svg>
+          <span>Statistik</span>
+        </a>
+        <a href="#vikt" class="tab-btn" data-view-link="vikt">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.5-12h13L20 20z"/><path d="M9 8a3 3 0 0 1 6 0"/></svg>
+          <span>Vikt</span>
+        </a>
+      </nav>
+
       <!-- ===== SNABBSTATISTIK ===== -->
-      <section class="card">
+      <section class="card" data-view="logga">
         <div class="quick-stats">
           <div class="quick-stat">
             <div class="quick-stat-value" id="rest-days-value">–</div>
@@ -134,7 +156,7 @@
       </section>
 
       <!-- ===== PROFIL ===== -->
-      <section class="card">
+      <section class="card" data-view="profil">
         <h2>Din profil</h2>
         <p class="hint">Används för att räkna ut BMI och ungefärligt kaloriförbrukning per pass.</p>
         <form id="profile-form" class="form-grid">
@@ -155,8 +177,20 @@
         <div id="profile-stats" class="stats"></div>
       </section>
 
+      <!-- ===== KONTO (inloggad) ===== -->
+      <section class="card" data-view="profil">
+        <h2>Konto</h2>
+        <div id="auth-logged-in" hidden>
+          <p class="hint">
+            Inloggad som <strong id="auth-user-email"></strong> &middot;
+            data synkas till molnet.
+          </p>
+          <button type="button" id="sign-out-btn" class="secondary">Logga ut</button>
+        </div>
+      </section>
+
       <!-- ===== NYTT / REDIGERA PASS ===== -->
-      <section class="card">
+      <section class="card" data-view="logga">
         <h2 id="session-form-title">Logga nytt pass</h2>
         <form id="session-form">
           <input type="hidden" id="session-editing-id">
@@ -208,13 +242,13 @@
       </section>
 
       <!-- ===== HISTORIK ===== -->
-      <section class="card">
+      <section class="card" data-view="historik">
         <h2>Historik</h2>
         <div id="history"></div>
       </section>
 
       <!-- ===== STATISTIK ===== -->
-      <section class="card">
+      <section class="card" data-view="statistik">
         <h2>Statistik</h2>
 
         <h3>Tränade minuter per vecka (min)</h3>
@@ -231,7 +265,7 @@
       </section>
 
       <!-- ===== KROPPSVIKT ===== -->
-      <section class="card">
+      <section class="card" data-view="vikt">
         <h2 id="weight-form-title">Kroppsvikt</h2>
         <p class="hint">Logga din vikt över tid. Hålls i synk med vikten i profilen.</p>
         <form id="weight-form" class="form-grid">
@@ -258,6 +292,9 @@
     </div>
   </div>
 
+  <!-- ===== KORT BEKRÄFTELSE, t.ex. "Passet sparat" ===== -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
   <!-- ===== INFOKORT FÖR VALD ÖVNING (wger.de) ===== -->
   <dialog id="exercise-info" class="exercise-info" aria-labelledby="exercise-info-title">
     <div class="exercise-info-inner">
@@ -275,6 +312,6 @@
     </div>
   </dialog>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2026-09-27.1"></script>
 </body>
 </html>

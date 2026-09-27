@@ -151,6 +151,7 @@ async function saveProfile(profile) {
     .from("profiles")
     .upsert(profileToRow(profile), { onConflict: "user_id" });
   if (error) alert("Kunde inte spara profilen: " + error.message);
+  return !error;
 }
 
 async function loadSessions() {
@@ -188,6 +189,7 @@ async function updateSession(id, changes) {
     .update(sessionToRow(changes))
     .eq("id", id);
   if (error) alert("Kunde inte uppdatera passet: " + error.message);
+  return !error;
 }
 
 async function removeSession(id) {
@@ -225,6 +227,7 @@ async function createWeightLog(log) {
   if (!currentUser) return;
   const { error } = await supabaseClient.from("body_weight_logs").insert(weightLogToRow(log));
   if (error) alert("Kunde inte spara vikten: " + error.message);
+  return !error;
 }
 
 async function updateWeightLog(id, changes) {
@@ -234,6 +237,7 @@ async function updateWeightLog(id, changes) {
     .update(weightLogToRow(changes))
     .eq("id", id);
   if (error) alert("Kunde inte uppdatera viktloggen: " + error.message);
+  return !error;
 }
 
 async function removeWeightLog(id) {
@@ -294,8 +298,13 @@ function updateAuthUI() {
   const loggedIn = document.getElementById("auth-logged-in");
   const appContent = document.getElementById("app-content");
   const recovery = document.getElementById("recovery-view");
+  // Inloggnings-kortet behövs bara utloggad; inloggat ligger kontoinfon i
+  // profilvyn istället (se showView()).
+  document.getElementById("account-card").hidden = !!currentUser || inPasswordRecovery;
+  document.getElementById("profile-btn").hidden = !currentUser || inPasswordRecovery;
 
   if (inPasswordRecovery) {
+    document.getElementById("reset-username").value = currentUser ? currentUser.email : "";
     loggedOut.hidden = true;
     loggedIn.hidden = true;
     appContent.hidden = true;
@@ -465,7 +474,8 @@ document.getElementById("profile-form").addEventListener("submit", async (e) => 
     heightCm: parseFloat(document.getElementById("profile-height").value),
   };
   const previous = await loadProfile();
-  await saveProfile(profile);
+  if (!(await saveProfile(profile))) return;
+  showToast("Profilen sparad ✓");
   await renderProfileStats();
   await refreshHistoryUI(); // kalorier per pass beror på profilens vikt
 
@@ -875,6 +885,7 @@ async function startEditingSession(id) {
   document.getElementById("session-form-title").textContent = "Redigera pass";
   document.getElementById("session-submit-btn").textContent = "Uppdatera pass";
   document.getElementById("cancel-edit-btn").hidden = false;
+  goToView("logga");
   document.getElementById("session-form").scrollIntoView({ behavior: "smooth" });
 }
 
@@ -914,14 +925,21 @@ document.getElementById("session-form").addEventListener("submit", async (e) => 
     }
   }
 
-  if (editingId) {
-    await updateSession(Number(editingId), { type, date, durationMin, exercises, pace, notes });
-  } else {
-    await createSession({ type, date, durationMin, exercises, pace, notes });
-  }
+  const ok = editingId
+    ? await updateSession(Number(editingId), { type, date, durationMin, exercises, pace, notes })
+    : !!(await createSession({ type, date, durationMin, exercises, pace, notes }));
+  if (!ok) return; // felet har redan visats; behåll det man fyllt i
 
   resetSessionForm();
   await refreshHistoryUI();
+  // Historiken syns inte i Logga-vyn, så bekräfta att det gick. Kom man
+  // från "Redigera" i historiken skickas man tillbaka dit.
+  if (editingId) {
+    showToast("Passet uppdaterat ✓");
+    goToView("historik");
+  } else {
+    showToast("Passet sparat ✓");
+  }
 });
 
 // ---------- Historik: rendering ----------
@@ -960,7 +978,24 @@ async function deleteSession(id) {
   await refreshHistoryUI();
 }
 
+// Historiken visas som en kompakt lista: en rad per pass (datum, typ,
+// längd, kalorier) som fälls ut vid tryck (<details>) och då visar
+// övningar/tempo, anteckning och Redigera/Ta bort. Bara de senaste
+// HISTORY_PAGE_SIZE visas först, "Visa fler" laddar ytterligare lika många.
+const HISTORY_PAGE_SIZE = 10;
+let historyVisibleCount = HISTORY_PAGE_SIZE;
+const openSessionIds = new Set(); // så utfällda pass förblir öppna vid omritning
+let lastHistoryArgs = null;
+
+function formatSessionDate(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  const opts = { weekday: "short", day: "numeric", month: "short" };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString("sv-SE", opts);
+}
+
 function renderHistory(allSessions, profile) {
+  lastHistoryArgs = [allSessions, profile];
   const el = document.getElementById("history");
   const sessions = allSessions.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
 
@@ -969,73 +1004,86 @@ function renderHistory(allSessions, profile) {
     return;
   }
 
-  const rows = sessions
+  const visible = sessions.slice(0, historyVisibleCount);
+  const items = visible
     .map((s) => {
       const type = s.type || "strength";
+      const paceUnit = PACE_UNIT_BY_TYPE[type];
+
+      const meta = [`${s.durationMin} min`];
+      if (profile && profile.weightKg) {
+        meta.push(`${computeCaloriesBurned(s.durationMin, profile.weightKg, type, s.pace)} kcal`);
+      }
+
       const details =
         type === "strength"
           ? `<ul class="ex-list">${s.exercises
               .map((ex) => `<li>${escapeHtml(ex.name)}: ${ex.weight} kg × ${ex.reps} reps</li>`)
               .join("")}</ul>`
-          : "–";
+          : `<p class="session-detail"><span class="session-detail-label">${paceUnit === "minPerKm" ? "Tempo" : "Snittfart"}:</span> ${s.pace ?? "–"} ${paceUnit === "minPerKm" ? "min/km" : "km/h"}</p>`;
 
-      const paceUnit = PACE_UNIT_BY_TYPE[type];
-      const pace = paceUnit
-        ? `${s.pace ?? "–"} ${paceUnit === "minPerKm" ? "min/km" : "km/h"}`
-        : "–";
-
-      let calories = "–";
-      if (profile && profile.weightKg) {
-        calories = `${computeCaloriesBurned(s.durationMin, profile.weightKg, type, s.pace)} kcal`;
-      }
-
-      // Anteckningen får en egen rad under passet, över hela tabellbredden.
-      const noteRow = s.notes
-        ? `<tr class="note-row"><td colspan="7"><span class="note-label">Anteckning:</span> ${escapeHtml(s.notes)}</td></tr>`
+      const note = s.notes
+        ? `<p class="session-note"><span class="note-label">Anteckning:</span> ${escapeHtml(s.notes)}</p>`
         : "";
 
       return `
-        <tbody>
-          <tr${s.notes ? ' class="has-note"' : ""}>
-            ${responsiveCell("Datum", s.date)}
-            ${responsiveCell("Typ", SESSION_TYPE_LABELS[type] || type)}
-            ${responsiveCell("Längd", `${s.durationMin} min`)}
-            ${responsiveCell("Tempo/fart", pace)}
-            ${responsiveCell("Övningar", details)}
-            ${responsiveCell("Kalorier", calories)}
-            ${actionCell(s.id)}
-          </tr>
-          ${noteRow}
-        </tbody>
+        <li>
+          <details class="session-item" data-id="${s.id}"${openSessionIds.has(s.id) ? " open" : ""}>
+            <summary>
+              <span class="session-main">
+                <strong>${formatSessionDate(s.date)}</strong> · ${SESSION_TYPE_LABELS[type] || type}
+                ${s.notes ? `<span class="session-has-note" title="Har anteckning" aria-label="Har anteckning">✎</span>` : ""}
+              </span>
+              <span class="session-meta">${meta.join(" · ")}</span>
+            </summary>
+            <div class="session-body">
+              ${details}
+              ${note}
+              <div class="button-row">
+                <button class="secondary edit-link" data-id="${s.id}">Redigera</button>
+                <button class="danger-link" data-id="${s.id}">Ta bort</button>
+              </div>
+            </div>
+          </details>
+        </li>
       `;
     })
     .join("");
 
   el.innerHTML = `
-    <div class="table-scroll">
-      <table class="responsive-table">
-        <thead>
-          <tr>
-            <th>Datum</th>
-            <th>Typ</th>
-            <th>Längd</th>
-            <th>Tempo/fart</th>
-            <th>Övningar</th>
-            <th>Kalorier (uppskattat)</th>
-            <th></th>
-          </tr>
-        </thead>
-        ${rows}
-      </table>
-    </div>
+    <ul class="session-list">${items}</ul>
+    ${showMoreHtml(visible.length, sessions.length, "pass")}
   `;
 
+  el.querySelectorAll(".session-item").forEach((d) => {
+    d.addEventListener("toggle", () => {
+      const id = Number(d.dataset.id);
+      if (d.open) openSessionIds.add(id);
+      else openSessionIds.delete(id);
+    });
+  });
   el.querySelectorAll(".danger-link").forEach((btn) => {
     btn.addEventListener("click", () => deleteSession(Number(btn.dataset.id)));
   });
   el.querySelectorAll(".edit-link").forEach((btn) => {
     btn.addEventListener("click", () => startEditingSession(Number(btn.dataset.id)));
   });
+  el.querySelector(".show-more")?.addEventListener("click", () => {
+    historyVisibleCount += HISTORY_PAGE_SIZE;
+    renderHistory(...lastHistoryArgs);
+  });
+}
+
+// "Visar 10 av 43 pass" + knapp, eller inget om allt redan syns.
+function showMoreHtml(shown, total, noun) {
+  if (shown >= total) return "";
+  const next = Math.min(HISTORY_PAGE_SIZE, total - shown);
+  return `
+    <div class="show-more-row">
+      <span class="hint">Visar ${shown} av ${total} ${noun}</span>
+      <button type="button" class="secondary show-more">Visa ${next} till</button>
+    </div>
+  `;
 }
 
 // ---------- Statistik: minuter/kalorier per vecka & personliga rekord ----------
@@ -1393,14 +1441,12 @@ document.getElementById("weight-form").addEventListener("submit", async (e) => {
     weightKg: parseFloat(document.getElementById("weight-kg").value),
   };
 
-  if (editingId) {
-    await updateWeightLog(Number(editingId), log);
-  } else {
-    await createWeightLog(log);
-  }
+  const ok = editingId ? await updateWeightLog(Number(editingId), log) : await createWeightLog(log);
+  if (!ok) return; // felet har redan visats; behåll det man fyllt i
 
   resetWeightForm();
   await refreshWeightUI();
+  showToast(editingId ? "Vikten uppdaterad ✓" : "Vikten sparad ✓");
 
   if (await syncProfileWeightFromLatestLog(log.date)) {
     await refreshProfileUI();
@@ -1519,6 +1565,8 @@ function renderWeightChart(logsAsc) {
   });
 }
 
+let weightVisibleCount = 10;
+
 function renderWeightHistory(logsDesc) {
   const el = document.getElementById("weight-history");
 
@@ -1527,7 +1575,8 @@ function renderWeightHistory(logsDesc) {
     return;
   }
 
-  const rows = logsDesc
+  const visible = logsDesc.slice(0, weightVisibleCount);
+  const rows = visible
     .map((log, i) => {
       const previous = logsDesc[i + 1]; // listan är nyast först
       const change = previous ? formatSignedKg(log.weightKg - previous.weightKg) : "–";
@@ -1558,7 +1607,13 @@ function renderWeightHistory(logsDesc) {
         ${rows}
       </table>
     </div>
+    ${showMoreHtml(visible.length, logsDesc.length, "loggningar")}
   `;
+
+  el.querySelector(".show-more")?.addEventListener("click", () => {
+    weightVisibleCount += HISTORY_PAGE_SIZE;
+    renderWeightHistory(logsDesc);
+  });
 
   const byId = new Map(logsDesc.map((log) => [log.id, log]));
   el.querySelectorAll(".edit-link").forEach((btn) => {
@@ -1588,10 +1643,62 @@ window.addEventListener("resize", () => {
   weightChartResizeTimer = setTimeout(() => renderWeightChart(lastWeightLogsAsc), 150);
 });
 
+// ---------- Vyer (flikar) ----------
+
+// Appen är uppdelad i vyer istället för en lång sida. Varje kort i
+// #app-content har `data-view`, och flikarna/profilknappen är vanliga
+// länkar till #vy - så bakåtknappen och omladdning funkar. Okänd eller
+// tom hash (t.ex. Supabase egna #access_token=... i mejllänkar) ger
+// Logga-vyn, utan att hashen skrivs över.
+const VIEWS = ["logga", "historik", "statistik", "vikt", "profil"];
+let currentView = null;
+
+function viewFromHash() {
+  const hash = location.hash.slice(1);
+  return VIEWS.includes(hash) ? hash : "logga";
+}
+
+function showView(view) {
+  if (!VIEWS.includes(view)) view = "logga";
+  const changed = view !== currentView;
+  currentView = view;
+
+  document.querySelectorAll("#app-content [data-view]").forEach((section) => {
+    section.hidden = section.dataset.view !== view;
+  });
+  document.querySelectorAll("[data-view-link]").forEach((link) => {
+    if (link.dataset.viewLink === view) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  });
+
+  // Viktgrafen ritas i containerns bredd, som är 0 medan vyn är dold.
+  if (view === "vikt") renderWeightChart(lastWeightLogsAsc);
+  if (changed) window.scrollTo(0, 0);
+}
+
+// För byten inifrån koden (t.ex. "Redigera" i historiken): uppdaterar
+// adressen utan att vänta på hashchange, så man kan scrolla direkt efteråt.
+function goToView(view) {
+  if (location.hash !== "#" + view) history.pushState(null, "", "#" + view);
+  showView(view);
+}
+
+window.addEventListener("hashchange", () => showView(viewFromHash()));
+
+let toastTimer = null;
+function showToast(message) {
+  const toast = document.getElementById("toast");
+  toast.textContent = message;
+  toast.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (toast.hidden = true), 2200);
+}
+
 // ---------- Init ----------
 
 resetSessionForm(); // sätter startläge: tom övningsrad, dagens datum, "styrka" synlig
 resetWeightForm();
+showView(viewFromHash());
 
 // Utan Supabase-biblioteket (t.ex. CDN:et hann inte ladda pga dåligt nät)
 // finns inget att göra - HTML:ens default-läge visar redan bara

@@ -526,19 +526,6 @@ th, td {
 
 th { color: var(--accent); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.3px; }
 
-/* Anteckning under ett pass i historiken: passraden och anteckningen
-   ska läsas som en enhet, så linjen mellan dem tas bort. */
-tr.has-note td {
-  border-bottom: none;
-}
-
-.note-row td {
-  padding-top: 0;
-  color: var(--muted);
-  font-size: 0.85rem;
-  white-space: pre-wrap; /* behåll radbrytningar från textfältet */
-}
-
 .note-label {
   color: var(--accent);
   font-weight: 600;
@@ -603,11 +590,230 @@ tr.has-note td {
   display: none;
 }
 
+/* ---------- Flikar / vyer ---------- */
+
+.tab-bar {
+  position: sticky;
+  top: 8px;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.tab-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.tab-btn svg,
+.profile-btn svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab-btn:hover {
+  color: var(--text);
+}
+
+.tab-btn[aria-current="page"] {
+  color: var(--accent-bright);
+  background: rgba(224, 178, 61, 0.12);
+}
+
+.profile-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--accent);
+  border: 1px solid var(--card-border);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.profile-btn[hidden] {
+  display: none;
+}
+
+.profile-btn[aria-current="page"] {
+  color: #1a1204;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- Historik: kompakt, utfällbar lista ---------- */
+
+.session-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.session-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.session-item summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+  padding: 10px 24px 10px 2px;
+  position: relative;
+  cursor: pointer;
+  list-style: none;
+}
+
+.session-item summary::-webkit-details-marker {
+  display: none;
+}
+
+/* Pil till höger som vänds när passet är utfällt. */
+.session-item summary::after {
+  content: "";
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -6px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg);
+  transition: transform 0.15s;
+}
+
+.session-item[open] summary::after {
+  margin-top: -2px;
+  transform: rotate(225deg);
+}
+
+.session-item summary:hover .session-main strong {
+  color: var(--accent-bright);
+}
+
+.session-main {
+  min-width: 0;
+}
+
+.session-meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.session-has-note {
+  margin-left: 4px;
+  color: var(--accent);
+}
+
+.session-body {
+  padding: 0 2px 12px;
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.session-body .ex-list,
+.session-detail,
+.session-note {
+  margin: 0 0 10px;
+}
+
+.session-detail-label {
+  color: var(--muted);
+}
+
+.session-note {
+  color: var(--muted);
+  white-space: pre-wrap; /* behåll radbrytningar från textfältet */
+}
+
+.show-more-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.show-more-row .hint {
+  margin: 0;
+}
+
+/* ---------- Bekräftelse ("Passet sparat") ---------- */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  z-index: 50;
+  padding: 10px 16px;
+  background: var(--accent);
+  color: #1a1204;
+  font-weight: 700;
+  font-size: 0.9rem;
+  border-radius: 999px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.toast[hidden] {
+  display: none;
+}
+
 /* ---------- Mobil: kort istället för tabeller, liggande staplar ----------
    Tabellerna är minst 640px breda och ryms inte i kortet under ca 720px
    skärmbredd. Där blir varje post (<tbody>) istället ett eget litet kort
    med etikett (data-label) framför varje värde. */
 @media (max-width: 720px) {
+  /* Flikraden ligger fast längst ner, som i en vanlig app. Luft under
+     innehållet så att det sista inte göms bakom den. */
+  .tab-bar {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0;
+    border-radius: 0;
+    border-width: 1px 0 0;
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  }
+
+  .wrap {
+    padding-bottom: calc(96px + env(safe-area-inset-bottom));
+  }
+
+  .toast {
+    bottom: calc(80px + env(safe-area-inset-bottom));
+  }
+
   .table-scroll {
     overflow-x: visible;
   }
@@ -631,9 +837,8 @@ tr.has-note td {
     clip-path: inset(50%);
   }
 
-  /* Raderna "löses upp" (display: contents) så att alla celler i posten,
-     inklusive ev. anteckningsrad, blir syskon i kortet - då kan
-     knapparna läggas sist, under anteckningen. */
+  /* Raderna "löses upp" (display: contents) så att alla celler i posten
+     blir syskon i kortet - då kan knapparna läggas sist med `order`. */
   .responsive-table tr {
     display: contents;
   }
@@ -674,16 +879,8 @@ tr.has-note td {
     padding-top: 10px;
   }
 
-  .responsive-table td.cell-actions::before,
-  .responsive-table .note-row td::before {
+  .responsive-table td.cell-actions::before {
     content: none;
-  }
-
-  .responsive-table .note-row td {
-    display: block;
-    margin-top: 6px;
-    padding-top: 8px;
-    border-top: 1px solid var(--border);
   }
 
   /* Veckograferna: 12 stående staplar ryms inte med läsbara värden, så de

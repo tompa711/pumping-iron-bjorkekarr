@@ -21,13 +21,31 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
 - Headern (`.poster` i `style.css`) har en cirkulär "PI"-badge, titel
   och undertext, ovanpå en mörk panel med ett subtilt guld-kryssmönster
   (`.poster::before`) som en nick till vattenmärket på inspirationsbilden.
+- **Vyer/flikar**: appen är uppdelad i vyer istället för en lång sida.
+  Varje kort i `#app-content` har `data-view` (`logga`, `historik`,
+  `statistik`, `vikt`, `profil`), och `showView()` i `app.js` visar
+  bara den aktiva vyns kort. Flikraden (`.tab-bar`) har Logga, Historik,
+  Statistik och Vikt - fast längst ner på mobil, sticky överst på dator.
+  Profil + konto (inkl. "Logga ut") nås via den runda ikonen uppe till
+  höger i headern (`#profile-btn`).
+  - Flikarna är vanliga länkar till `#vy`, så bakåtknapp och omladdning
+    funkar (`hashchange` → `showView(viewFromHash())`). Byten inifrån
+    koden (t.ex. "Redigera" i historiken → Logga-vyn, och tillbaka till
+    Historik efter uppdatering) går via `goToView()` (pushState).
+  - Okänd/tom hash ger Logga-vyn **utan att hashen skrivs över** -
+    Supabase lägger sina egna `#access_token=...` i mejllänkarna
+    (glömt lösenord/bekräftelse), de får inte förstöras.
+  - Viktgrafen ritas om när Vikt-vyn visas (den mäter containerns
+    bredd, som är 0 medan vyn är dold).
+  - Eftersom historiken inte syns när man sparar ett pass visas en kort
+    bekräftelse (`showToast()`, `#toast`). Visas bara om sparningen
+    lyckades - spar-funktionerna returnerar `true`/`false`.
 - **Mobil/responsivitet**: inget ska kräva sidledsskrollning på en
   telefon (testat vid 360px). Under 720px (`@media (max-width: 720px)`
   i `style.css`):
-  - Tabellerna (historik, personliga rekord, viktloggar) har klassen
+  - Tabellerna (personliga rekord, viktloggar) har klassen
     `.responsive-table` och visas som ett kort per post. Varje post
-    ligger i en egen `<tbody>` (passet + ev. anteckningsrad = ett kort),
-    och varje cell byggs med `responsiveCell(label, content)` i `app.js`
+    ligger i en egen `<tbody>`, och varje cell byggs med `responsiveCell(label, content)` i `app.js`
     som sätter `data-label` (visas som etikett i kortläget) och döljer
     tomma "–"-värden. Knapparna byggs med `actionCell(id)` och läggs
     sist i kortet. Ny tabell = använd samma helpers + klass.
@@ -37,12 +55,12 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   `apple-touch-icon.png`/`icon-512.png`) återanvänder exakt samma
   badge-design.
 
-## Vad appen gör (v1 + v2 + v3 + v4 + v5 + v6)
+## Vad appen gör (v1–v7)
 
 - **Inloggning krävs**: appen visar bara inloggnings-/
   registreringsformulär (mejl + lösenord) tills man är inloggad. Resten
   av appen (`#app-content` i `index.html`) är dold fram tills dess.
-- **Snabbstatistik** (överst i appen, direkt under inloggningen):
+- **Snabbstatistik** (överst i Logga-vyn):
   - **Dagar sedan senaste passet** (vilken passtyp som helst).
   - **Veckostreak**: antal veckor i rad med minst 3 pass. Nuvarande
     (ej avslutade) vecka räknas bara in om den redan nått 3 pass -
@@ -72,20 +90,26 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   (`autofillFromHistory()` i `wireExerciseAutocomplete()`, `app.js`).
 - **Anteckning per pass** (valfritt): textfält med flera rader i
   pass-formuläret (`#session-notes`) för t.ex. dagsform, skador och
-  humör. Visas i historiken på en egen rad direkt under passet (bara
-  om det finns en anteckning) och följer med i redigeringsflödet.
+  humör. Visas i det utfällda passet i historiken (en ✎ på den
+  kompakta raden visar att det finns en) och följer med i
+  redigeringsflödet.
   Radbrytningar behålls (`white-space: pre-wrap`), och texten escapas
   via `escapeHtml()` innan den stoppas in i historikens HTML-mall
   (gäller nu även övningsnamnen där).
-- **Redigera pass**: Varje rad i historiken har en "Redigera"-knapp som
-  laddar in passet i formuläret ovan (datum, längd, typ, tempo/fart,
-  ev. övningar) så man kan ändra det och spara igen. "Avbryt
+- **Redigera pass**: Varje utfällt pass i historiken har en
+  "Redigera"-knapp som byter till Logga-vyn och laddar in passet i
+  formuläret (datum, längd, typ, tempo/fart, ev. övningar, anteckning).
+  Efter "Uppdatera pass" skickas man tillbaka till Historik. "Avbryt
   redigering" återgår till att logga ett nytt pass.
-- **Historik**: Tabell över alla sparade pass med passtyp, längd,
-  tempo/fart, ev. övningar och uträknade kalorier (baserat på profilens
-  vikt, passets längd och en MET-nivå som räknas ut från tempot/farten
-  för konditionspass). Man kan ta bort enskilda pass.
-- **Statistik**: Ett eget kort under historiken med
+- **Historik** (egen vy): kompakt lista, en rad per pass (veckodag +
+  datum, typ, längd, uträknade kalorier - baserat på profilens vikt,
+  passets längd och en MET-nivå från tempot/farten för konditionspass).
+  Trycker man på raden fälls den ut (`<details>`) och visar övningar
+  eller tempo/snittfart, anteckning och Redigera/Ta bort. Utfällda pass
+  förblir öppna vid omritning (`openSessionIds`). Bara de senaste 10
+  visas först; "Visa N till" laddar 10 till (`HISTORY_PAGE_SIZE`,
+  `showMoreHtml()` - samma knapp används för viktloggarna).
+- **Statistik** (egen vy) med
   - **Tränade minuter per vecka**: summan av pass-längd för **alla**
     pass (styrka + kondition), grupperat per kalendervecka
     (måndag-baserad, ISO-veckonummer som etikett).
@@ -106,7 +130,7 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
     (skiftlägeskänsligt för visning, men grupperas skiftlägesokänsligt).
   - Allt beräknas client-side i `app.js` från samma sessionsdata som
     historiken, ingen extra Supabase-fråga.
-- **Kroppsvikt** (eget kort längst ner, separat från pass och
+- **Kroppsvikt** (egen vy, Vikt-fliken, separat från pass och
   statistik):
   - Formulär med datum (default idag, lokal tid via `todayLocalISO()`)
     + vikt. Flera loggningar samma dag är tillåtna.
@@ -125,7 +149,8 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
     Ovanför grafen: senaste vikt och förändring sedan första loggningen.
   - **Tidigare loggningar**: tabell (nyast först) med förändring mot
     föregående loggning, "Redigera" (laddar in i formuläret, som för
-    pass) och "Ta bort".
+    pass) och "Ta bort". Visar 10 i taget med "Visa N till" (samma
+    som historiken).
 
 ## Datalagring: allt i Supabase
 
@@ -168,6 +193,13 @@ mappningen mot Supabase-kolumnerna):
   växlade via `setAuthView("login" | "signup" | "forgot")` i `app.js`.
   - Lösenord kräver minst 6 tecken (`minlength="6"` client-side, samma
     minimum som Supabase Auth har som default).
+  - **Lösenordshanterare** (iCloud-nyckelringen m.fl.): alla
+    auth-fält har `name` + `autocomplete` (`username`,
+    `current-password` vid inloggning, `new-password` vid registrering
+    och nytt lösenord), annars erbjuder Safari inte att spara/fylla i.
+    "Välj nytt lösenord" har ett dolt `autocomplete="username"`-fält
+    (`#reset-username`, fylls med mejlen i `updateAuthUI()`) så att rätt
+    sparat lösenord uppdateras.
   - Om **e-postbekräftelse** är påslaget i projektet (default för nya
     Supabase-projekt) måste man bekräfta mejlen (länk i mejlet) innan
     man kan logga in efter registrering - `emailRedirectTo` pekar då
@@ -194,8 +226,10 @@ mappningen mot Supabase-kolumnerna):
   RLS-policyn nedan är aktiv**: anon-nyckeln ger bara åtkomst till rader
   som `auth.uid()` äger, aldrig andras data.
 - **UI-gating**: `updateAuthUI()` i `app.js` visar/döljer
-  `#app-content` (profil, pass-formulär, historik) beroende på om
-  `currentUser` är satt. Utloggad ser man bara inloggningsformuläret.
+  `#app-content` (alla vyer + flikraden) beroende på om `currentUser`
+  är satt. Utloggad ser man bara inloggningskortet (`#account-card`);
+  inloggad döljs det kortet och kontoinfon/"Logga ut" ligger istället i
+  profilvyn.
 
 ### Databasschema (kör i Supabase → SQL Editor, en gång)
 
@@ -362,6 +396,15 @@ behövs. Klickar man på ett förslag fylls namnet i automatiskt.
 
 Vanilla JS + `@supabase/supabase-js` via CDN. Inget npm, inget
 byggsteg.
+
+**Cache-busting (viktigt vid varje release)**: `index.html` laddar
+`style.css?v=...` och `app.js?v=...`. Appen på hemskärmen (iOS
+standalone) har egen cache skild från Safari och fortsätter annars
+använda gamla filer efter en uppdatering - det har hänt. **Bumpa
+`v=`-värdet (format `ÅÅÅÅ-MM-DD.N`) på båda raderna i samma commit som
+ändrar `style.css` eller `app.js`.** GitHub Pages skickar dessutom
+`cache-control: max-age=600`, så även `index.html` kan vara upp till
+10 minuter gammal direkt efter en push.
 
 ## Möjliga nästa steg (inte byggt än)
 
