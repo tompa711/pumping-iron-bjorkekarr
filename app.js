@@ -115,6 +115,7 @@ function sessionFromRow(row) {
     durationMin: row.duration_min,
     pace: row.pace,
     exercises: row.exercises || [],
+    notes: row.notes || "",
   };
 }
 
@@ -126,6 +127,7 @@ function sessionToRow(session) {
     duration_min: session.durationMin,
     pace: session.pace,
     exercises: session.exercises,
+    notes: session.notes || null, // tom anteckning sparas som null
   };
 }
 
@@ -192,6 +194,52 @@ async function removeSession(id) {
   if (!currentUser) return;
   const { error } = await supabaseClient.from("workout_sessions").delete().eq("id", id);
   if (error) alert("Kunde inte ta bort passet: " + error.message);
+}
+
+// Kroppsvikt loggas separat från passen (och från profilens vikt).
+function weightLogFromRow(row) {
+  return { id: row.id, date: row.date, weightKg: Number(row.weight_kg) };
+}
+
+function weightLogToRow(log) {
+  return { user_id: currentUser.id, date: log.date, weight_kg: log.weightKg };
+}
+
+// Nyast först; flera loggningar samma dag sorteras på när de skapades.
+async function loadWeightLogs() {
+  if (!currentUser) return [];
+  const { data, error } = await supabaseClient
+    .from("body_weight_logs")
+    .select("*")
+    .eq("user_id", currentUser.id)
+    .order("date", { ascending: false })
+    .order("created_at", { ascending: false });
+  if (error) {
+    console.error("Kunde inte hämta viktloggar från Supabase:", error);
+    return [];
+  }
+  return (data || []).map(weightLogFromRow);
+}
+
+async function createWeightLog(log) {
+  if (!currentUser) return;
+  const { error } = await supabaseClient.from("body_weight_logs").insert(weightLogToRow(log));
+  if (error) alert("Kunde inte spara vikten: " + error.message);
+}
+
+async function updateWeightLog(id, changes) {
+  if (!currentUser) return;
+  const { error } = await supabaseClient
+    .from("body_weight_logs")
+    .update(weightLogToRow(changes))
+    .eq("id", id);
+  if (error) alert("Kunde inte uppdatera viktloggen: " + error.message);
+}
+
+async function removeWeightLog(id) {
+  if (!currentUser) return;
+  const { error } = await supabaseClient.from("body_weight_logs").delete().eq("id", id);
+  if (error) alert("Kunde inte ta bort viktloggen: " + error.message);
 }
 
 // ---------- Beräkningar ----------
@@ -416,9 +464,17 @@ document.getElementById("profile-form").addEventListener("submit", async (e) => 
     weightKg: parseFloat(document.getElementById("profile-weight").value),
     heightCm: parseFloat(document.getElementById("profile-height").value),
   };
+  const previous = await loadProfile();
   await saveProfile(profile);
   await renderProfileStats();
   await refreshHistoryUI(); // kalorier per pass beror på profilens vikt
+
+  // Ändrad vikt i profilen loggas även i viktloggen (se logWeightForToday).
+  const weightChanged = !previous || Number(previous.weightKg) !== profile.weightKg;
+  if (profile.weightKg > 0 && weightChanged) {
+    await logWeightForToday(profile.weightKg);
+    await refreshWeightUI();
+  }
 });
 
 // ---------- Övningssök mot wger.dev (publikt API, ingen nyckel behövs) ----------
@@ -800,6 +856,7 @@ async function startEditingSession(id) {
   document.getElementById("session-date").value = session.date;
   document.getElementById("session-duration").value = session.durationMin;
   document.getElementById("session-pace").value = session.pace || "";
+  document.getElementById("session-notes").value = session.notes;
 
   document.getElementById("exercise-rows").innerHTML = "";
   if (session.exercises.length > 0) {
@@ -832,6 +889,7 @@ document.getElementById("session-form").addEventListener("submit", async (e) => 
   const type = document.getElementById("session-type").value;
   const date = document.getElementById("session-date").value;
   const durationMin = parseFloat(document.getElementById("session-duration").value);
+  const notes = document.getElementById("session-notes").value.trim();
 
   let exercises = [];
   let pace = null;
@@ -857,9 +915,9 @@ document.getElementById("session-form").addEventListener("submit", async (e) => 
   }
 
   if (editingId) {
-    await updateSession(Number(editingId), { type, date, durationMin, exercises, pace });
+    await updateSession(Number(editingId), { type, date, durationMin, exercises, pace, notes });
   } else {
-    await createSession({ type, date, durationMin, exercises, pace });
+    await createSession({ type, date, durationMin, exercises, pace, notes });
   }
 
   resetSessionForm();
@@ -867,6 +925,17 @@ document.getElementById("session-form").addEventListener("submit", async (e) => 
 });
 
 // ---------- Historik: rendering ----------
+
+// Fritext från användaren (anteckningar, övningsnamn) som stoppas in i
+// HTML-mallar måste escapas så att t.ex. "<" inte tolkas som en tagg.
+function escapeHtml(text) {
+  return String(text)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 async function deleteSession(id) {
   await removeSession(id);
@@ -888,7 +957,7 @@ function renderHistory(allSessions, profile) {
       const details =
         type === "strength"
           ? `<ul class="ex-list">${s.exercises
-              .map((ex) => `<li>${ex.name}: ${ex.weight} kg × ${ex.reps} reps</li>`)
+              .map((ex) => `<li>${escapeHtml(ex.name)}: ${ex.weight} kg × ${ex.reps} reps</li>`)
               .join("")}</ul>`
           : "–";
 
@@ -902,8 +971,13 @@ function renderHistory(allSessions, profile) {
         calories = `${computeCaloriesBurned(s.durationMin, profile.weightKg, type, s.pace)} kcal`;
       }
 
+      // Anteckningen får en egen rad under passet, över hela tabellbredden.
+      const noteRow = s.notes
+        ? `<tr class="note-row"><td colspan="7"><span class="note-label">Anteckning:</span> ${escapeHtml(s.notes)}</td></tr>`
+        : "";
+
       return `
-        <tr>
+        <tr${s.notes ? ' class="has-note"' : ""}>
           <td>${s.date}</td>
           <td>${SESSION_TYPE_LABELS[type] || type}</td>
           <td>${s.durationMin} min</td>
@@ -915,6 +989,7 @@ function renderHistory(allSessions, profile) {
             <button class="danger-link" data-id="${s.id}">Ta bort</button>
           </td>
         </tr>
+        ${noteRow}
       `;
     })
     .join("");
@@ -1204,9 +1279,298 @@ async function refreshHistoryUI() {
   renderStatistics(sessions, profile);
 }
 
+// ---------- Kroppsvikt: logga, graf, historik ----------
+
+function formatSignedKg(diff) {
+  if (Math.abs(diff) < 0.05) return "±0.0 kg";
+  return `${diff > 0 ? "+" : "−"}${Math.abs(diff).toFixed(1)} kg`;
+}
+
+function formatShortDate(dateStr, withYear) {
+  const opts = { day: "numeric", month: "short" };
+  if (withYear) opts.year = "numeric";
+  return new Date(dateStr + "T00:00:00").toLocaleDateString("sv-SE", opts);
+}
+
+// Runda axel-steg till "snygga" värden så att y-axeln får hela/halva kilon.
+function niceWeightAxis(min, max) {
+  const steps = [0.5, 1, 2, 5, 10, 20];
+  const span = Math.max(max - min, 0.1);
+  const step = steps.find((s) => span / s <= 4) || 50;
+  let lo = Math.floor(min / step) * step;
+  let hi = Math.ceil(max / step) * step;
+  if (hi - lo < step * 2) {
+    lo -= step;
+    hi += step;
+  }
+  const ticks = [];
+  for (let v = lo; v <= hi + 1e-9; v += step) ticks.push(Math.round(v * 10) / 10);
+  return { lo, hi, ticks };
+}
+
+// Dagens datum i lokal tid (inte UTC, som toISOString/valueAsDate ger -
+// annars blir "idag" gårdagen mellan midnatt och 02:00 svensk sommartid).
+function todayLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Profilens vikt och viktloggen hålls i synk åt båda hållen:
+// - ändrad vikt i profilen loggas på dagens datum (uppdaterar dagens
+//   loggning om det redan finns en, så det inte blir dubbletter), och
+// - en loggning på det senaste datumet uppdaterar profilens vikt.
+// Äldre loggningar (bakåt i tiden) rör inte profilen.
+async function logWeightForToday(weightKg) {
+  const today = todayLocalISO();
+  const logs = await loadWeightLogs();
+  const todays = logs.find((log) => log.date === today); // nyast skapad först
+  if (todays) {
+    if (todays.weightKg !== weightKg) await updateWeightLog(todays.id, { date: today, weightKg });
+  } else {
+    await createWeightLog({ date: today, weightKg });
+  }
+}
+
+async function syncProfileWeightFromLatestLog(savedDate) {
+  const logs = await loadWeightLogs();
+  const latest = logs[0];
+  if (!latest || latest.date !== savedDate) return false;
+
+  const profile = (await loadProfile()) || { name: "", weightKg: null, heightCm: null };
+  if (Number(profile.weightKg) === latest.weightKg) return false;
+  await saveProfile({ ...profile, weightKg: latest.weightKg });
+  return true;
+}
+
+function resetWeightForm() {
+  document.getElementById("weight-form").reset();
+  document.getElementById("weight-editing-id").value = "";
+  document.getElementById("weight-date").value = todayLocalISO();
+  document.getElementById("weight-form-title").textContent = "Kroppsvikt";
+  document.getElementById("weight-submit-btn").textContent = "Spara vikt";
+  document.getElementById("weight-cancel-edit-btn").hidden = true;
+}
+
+function startEditingWeightLog(log) {
+  document.getElementById("weight-editing-id").value = log.id;
+  document.getElementById("weight-date").value = log.date;
+  document.getElementById("weight-kg").value = log.weightKg;
+  document.getElementById("weight-form-title").textContent = "Redigera viktloggning";
+  document.getElementById("weight-submit-btn").textContent = "Uppdatera vikt";
+  document.getElementById("weight-cancel-edit-btn").hidden = false;
+  document.getElementById("weight-form").scrollIntoView({ behavior: "smooth" });
+}
+
+document.getElementById("weight-cancel-edit-btn").addEventListener("click", resetWeightForm);
+
+document.getElementById("weight-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const editingId = document.getElementById("weight-editing-id").value;
+  const log = {
+    date: document.getElementById("weight-date").value,
+    weightKg: parseFloat(document.getElementById("weight-kg").value),
+  };
+
+  if (editingId) {
+    await updateWeightLog(Number(editingId), log);
+  } else {
+    await createWeightLog(log);
+  }
+
+  resetWeightForm();
+  await refreshWeightUI();
+
+  if (await syncProfileWeightFromLatestLog(log.date)) {
+    await refreshProfileUI();
+    await refreshHistoryUI(); // kalorier per pass beror på profilens vikt
+  }
+});
+
+function renderWeightSummary(logsAsc) {
+  const el = document.getElementById("weight-summary");
+  if (logsAsc.length === 0) {
+    el.textContent = "";
+    el.hidden = true;
+    return;
+  }
+  const first = logsAsc[0];
+  const last = logsAsc[logsAsc.length - 1];
+  el.hidden = false;
+  el.textContent =
+    logsAsc.length === 1
+      ? `Senast: ${last.weightKg.toFixed(1)} kg (${last.date}).`
+      : `Senast: ${last.weightKg.toFixed(1)} kg (${last.date}) · ` +
+        `${formatSignedKg(last.weightKg - first.weightKg)} sedan första loggningen (${first.date}).`;
+}
+
+// Linjediagram i ren SVG (inget chart-bibliotek). Ritas i containerns
+// faktiska pixelbredd så att text och punkter inte förvrängs, och ritas om
+// vid fönsterstorleksändring (se `lastWeightLogsAsc` nedan).
+function renderWeightChart(logsAsc) {
+  const el = document.getElementById("weight-chart");
+
+  if (logsAsc.length === 0) {
+    el.innerHTML = `<p class="empty">Ingen vikt loggad ännu.</p>`;
+    return;
+  }
+
+  const width = el.clientWidth || 600;
+  const height = 220;
+  const m = { top: 16, right: 60, bottom: 28, left: 40 };
+  const plotW = width - m.left - m.right;
+  const plotH = height - m.top - m.bottom;
+
+  const times = logsAsc.map((l) => new Date(l.date + "T00:00:00").getTime());
+  const tMin = times[0];
+  const tMax = times[times.length - 1];
+  const weights = logsAsc.map((l) => l.weightKg);
+  const axis = niceWeightAxis(Math.min(...weights), Math.max(...weights));
+
+  const x = (t) => (tMax === tMin ? m.left + plotW / 2 : m.left + ((t - tMin) / (tMax - tMin)) * plotW);
+  const y = (w) => m.top + (1 - (w - axis.lo) / (axis.hi - axis.lo)) * plotH;
+  const points = logsAsc.map((l, i) => ({ ...l, px: x(times[i]), py: y(l.weightKg) }));
+
+  const multiYear = new Date(tMin).getFullYear() !== new Date(tMax).getFullYear();
+  const last = points[points.length - 1];
+
+  const grid = axis.ticks
+    .map(
+      (v) => `
+        <line class="wc-grid" x1="${m.left}" x2="${m.left + plotW}" y1="${y(v)}" y2="${y(v)}"></line>
+        <text class="wc-axis" x="${m.left - 6}" y="${y(v)}" text-anchor="end" dominant-baseline="middle">${v}</text>`
+    )
+    .join("");
+
+  const xLabels =
+    points.length === 1
+      ? `<text class="wc-axis" x="${last.px}" y="${height - 8}" text-anchor="middle">${formatShortDate(last.date, true)}</text>`
+      : `<text class="wc-axis" x="${m.left}" y="${height - 8}" text-anchor="start">${formatShortDate(logsAsc[0].date, multiYear)}</text>
+         <text class="wc-axis" x="${m.left + plotW}" y="${height - 8}" text-anchor="end">${formatShortDate(last.date, multiYear)}</text>`;
+
+  // Vid många loggningar blir punkterna brus - visa då bara linjen + slutpunkten.
+  const dotPoints = points.length <= 30 ? points : [last];
+  const dots = dotPoints.map((p) => `<circle class="wc-dot" cx="${p.px}" cy="${p.py}" r="4"></circle>`).join("");
+
+  el.innerHTML = `
+    <svg width="${width}" height="${height}" role="img"
+         aria-label="Viktutveckling, ${points.length} loggningar. Se tabellen nedan för alla värden.">
+      ${grid}
+      ${xLabels}
+      <polyline class="wc-line" points="${points.map((p) => `${p.px},${p.py}`).join(" ")}"></polyline>
+      ${dots}
+      <text class="wc-end-label" x="${last.px + 8}" y="${last.py}" dominant-baseline="middle">${last.weightKg.toFixed(1)} kg</text>
+      <line class="wc-crosshair" y1="${m.top}" y2="${m.top + plotH}" visibility="hidden"></line>
+      <circle class="wc-dot wc-focus" r="5" visibility="hidden"></circle>
+      <rect class="wc-hit" x="${m.left}" y="${m.top}" width="${plotW}" height="${plotH}"></rect>
+    </svg>
+    <div class="wc-tooltip" hidden><strong></strong><span></span></div>
+  `;
+
+  // Hover: hårkorset snappar till närmaste loggning i x-led.
+  const svg = el.querySelector("svg");
+  const crosshair = svg.querySelector(".wc-crosshair");
+  const focus = svg.querySelector(".wc-focus");
+  const tooltip = el.querySelector(".wc-tooltip");
+
+  svg.querySelector(".wc-hit").addEventListener("pointermove", (e) => {
+    const mouseX = e.clientX - svg.getBoundingClientRect().left;
+    const p = points.reduce((best, pt) => (Math.abs(pt.px - mouseX) < Math.abs(best.px - mouseX) ? pt : best));
+    crosshair.setAttribute("x1", p.px);
+    crosshair.setAttribute("x2", p.px);
+    crosshair.setAttribute("visibility", "visible");
+    focus.setAttribute("cx", p.px);
+    focus.setAttribute("cy", p.py);
+    focus.setAttribute("visibility", "visible");
+    tooltip.querySelector("strong").textContent = `${p.weightKg.toFixed(1)} kg`;
+    tooltip.querySelector("span").textContent = formatShortDate(p.date, true);
+    tooltip.hidden = false;
+    // Håll tooltipen innanför grafen även vid kanterna.
+    const left = Math.min(Math.max(p.px - tooltip.offsetWidth / 2, 0), width - tooltip.offsetWidth);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${Math.max(p.py - tooltip.offsetHeight - 12, 0)}px`;
+  });
+
+  svg.querySelector(".wc-hit").addEventListener("pointerleave", () => {
+    crosshair.setAttribute("visibility", "hidden");
+    focus.setAttribute("visibility", "hidden");
+    tooltip.hidden = true;
+  });
+}
+
+function renderWeightHistory(logsDesc) {
+  const el = document.getElementById("weight-history");
+
+  if (logsDesc.length === 0) {
+    el.innerHTML = `<p class="empty">Inga viktloggningar ännu.</p>`;
+    return;
+  }
+
+  const rows = logsDesc
+    .map((log, i) => {
+      const previous = logsDesc[i + 1]; // listan är nyast först
+      const change = previous ? formatSignedKg(log.weightKg - previous.weightKg) : "–";
+      return `
+        <tr>
+          <td>${log.date}</td>
+          <td>${log.weightKg.toFixed(1)} kg</td>
+          <td>${change}</td>
+          <td>
+            <button class="secondary edit-link" data-id="${log.id}">Redigera</button>
+            <button class="danger-link" data-id="${log.id}">Ta bort</button>
+          </td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  el.innerHTML = `
+    <div class="table-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Datum</th>
+            <th>Vikt</th>
+            <th>Förändring</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
+
+  const byId = new Map(logsDesc.map((log) => [log.id, log]));
+  el.querySelectorAll(".edit-link").forEach((btn) => {
+    btn.addEventListener("click", () => startEditingWeightLog(byId.get(Number(btn.dataset.id))));
+  });
+  el.querySelectorAll(".danger-link").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      await removeWeightLog(Number(btn.dataset.id));
+      await refreshWeightUI();
+    });
+  });
+}
+
+let lastWeightLogsAsc = [];
+
+async function refreshWeightUI() {
+  const logsDesc = await loadWeightLogs();
+  lastWeightLogsAsc = logsDesc.slice().reverse();
+  renderWeightSummary(lastWeightLogsAsc);
+  renderWeightChart(lastWeightLogsAsc);
+  renderWeightHistory(logsDesc);
+}
+
+let weightChartResizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(weightChartResizeTimer);
+  weightChartResizeTimer = setTimeout(() => renderWeightChart(lastWeightLogsAsc), 150);
+});
+
 // ---------- Init ----------
 
 resetSessionForm(); // sätter startläge: tom övningsrad, dagens datum, "styrka" synlig
+resetWeightForm();
 
 // Utan Supabase-biblioteket (t.ex. CDN:et hann inte ladda pga dåligt nät)
 // finns inget att göra - HTML:ens default-läge visar redan bara
@@ -1233,5 +1597,6 @@ supabaseClient?.auth.onAuthStateChange(async (event, session) => {
   if (!inPasswordRecovery) {
     await refreshProfileUI();
     await refreshHistoryUI();
+    await refreshWeightUI();
   }
 });

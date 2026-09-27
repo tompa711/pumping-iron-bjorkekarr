@@ -194,6 +194,12 @@
             </div>
           </div>
 
+          <label class="notes-label">
+            Anteckning (valfritt)
+            <textarea id="session-notes" rows="3" maxlength="2000"
+                      placeholder="T.ex. kändes tungt idag, ont i vänster axel, bra humör..."></textarea>
+          </label>
+
           <div class="submit-row">
             <button type="submit" id="session-submit-btn">Spara pass</button>
             <button type="button" id="cancel-edit-btn" class="secondary" hidden>Avbryt redigering</button>
@@ -222,6 +228,32 @@
         <h3>Personliga rekord</h3>
         <p class="hint">Högsta vikt och högsta volym (vikt × reps i ett set) som loggats någonsin, per övning.</p>
         <div id="personal-records"></div>
+      </section>
+
+      <!-- ===== KROPPSVIKT ===== -->
+      <section class="card">
+        <h2 id="weight-form-title">Kroppsvikt</h2>
+        <p class="hint">Logga din vikt över tid. Hålls i synk med vikten i profilen.</p>
+        <form id="weight-form" class="form-grid">
+          <input type="hidden" id="weight-editing-id">
+          <label>
+            Datum
+            <input type="date" id="weight-date" required>
+          </label>
+          <label>
+            Vikt (kg)
+            <input type="number" id="weight-kg" min="20" max="300" step="0.1" placeholder="T.ex. 82.5" required>
+          </label>
+          <button type="submit" id="weight-submit-btn">Spara vikt</button>
+          <button type="button" id="weight-cancel-edit-btn" class="secondary" hidden>Avbryt redigering</button>
+        </form>
+
+        <h3>Viktutveckling</h3>
+        <p id="weight-summary" class="hint"></p>
+        <div id="weight-chart" class="weight-chart"></div>
+
+        <h3>Tidigare loggningar</h3>
+        <div id="weight-history"></div>
       </section>
     </div>
   </div>

@@ -192,7 +192,8 @@ label[hidden] {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-width: 0;
   padding: 8px 10px;
@@ -204,12 +205,14 @@ select {
   background: #101012;
 }
 
-input::placeholder {
+input::placeholder,
+textarea::placeholder {
   color: #5c584f;
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(224, 178, 61, 0.2);
@@ -323,6 +326,77 @@ button.link-btn:hover {
   font-size: 0.8em;
 }
 
+/* Kroppsvikt: linjediagram i SVG */
+.weight-chart {
+  position: relative;
+  margin-bottom: 8px;
+}
+
+.weight-chart svg {
+  display: block;
+  overflow: visible;
+}
+
+.wc-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.wc-axis {
+  fill: var(--muted);
+  font-size: 11px;
+}
+
+.wc-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.wc-dot {
+  fill: var(--accent);
+  /* Ring i kortets färg så punkterna syns separat från linjen. */
+  stroke: var(--card);
+  stroke-width: 2;
+}
+
+.wc-end-label {
+  fill: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.wc-crosshair {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.wc-hit {
+  fill: transparent;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.wc-tooltip {
+  position: absolute;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 10px;
+  background: #1f1e1a;
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.5);
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.wc-tooltip span {
+  color: var(--muted);
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -399,6 +473,15 @@ button.link-btn:hover {
   padding-left: 20px;
 }
 
+.notes-label {
+  margin-top: 16px;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+
 .submit-row {
   margin-top: 16px;
 }
@@ -438,6 +521,24 @@ th, td {
 }
 
 th { color: var(--accent); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.3px; }
+
+/* Anteckning under ett pass i historiken: passraden och anteckningen
+   ska läsas som en enhet, så linjen mellan dem tas bort. */
+tr.has-note td {
+  border-bottom: none;
+}
+
+.note-row td {
+  padding-top: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  white-space: pre-wrap; /* behåll radbrytningar från textfältet */
+}
+
+.note-label {
+  color: var(--accent);
+  font-weight: 600;
+}
 
 .empty {
   color: var(--muted);

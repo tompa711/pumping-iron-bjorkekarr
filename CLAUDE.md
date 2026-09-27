@@ -25,7 +25,7 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   `apple-touch-icon.png`/`icon-512.png`) återanvänder exakt samma
   badge-design.
 
-## Vad appen gör (v1 + v2 + v3 + v4)
+## Vad appen gör (v1 + v2 + v3 + v4 + v5 + v6)
 
 - **Inloggning krävs**: appen visar bara inloggnings-/
   registreringsformulär (mejl + lösenord) tills man är inloggad. Resten
@@ -58,6 +58,13 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   aldrig skriver över något man redan fyllt i för hand. Triggas både
   när man klickar ett wger-sökförslag och när man lämnar fältet
   (`autofillFromHistory()` i `wireExerciseAutocomplete()`, `app.js`).
+- **Anteckning per pass** (valfritt): textfält med flera rader i
+  pass-formuläret (`#session-notes`) för t.ex. dagsform, skador och
+  humör. Visas i historiken på en egen rad direkt under passet (bara
+  om det finns en anteckning) och följer med i redigeringsflödet.
+  Radbrytningar behålls (`white-space: pre-wrap`), och texten escapas
+  via `escapeHtml()` innan den stoppas in i historikens HTML-mall
+  (gäller nu även övningsnamnen där).
 - **Redigera pass**: Varje rad i historiken har en "Redigera"-knapp som
   laddar in passet i formuläret ovan (datum, längd, typ, tempo/fart,
   ev. övningar) så man kan ändra det och spara igen. "Avbryt
@@ -87,6 +94,26 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
     (skiftlägeskänsligt för visning, men grupperas skiftlägesokänsligt).
   - Allt beräknas client-side i `app.js` från samma sessionsdata som
     historiken, ingen extra Supabase-fråga.
+- **Kroppsvikt** (eget kort längst ner, separat från pass och
+  statistik):
+  - Formulär med datum (default idag, lokal tid via `todayLocalISO()`)
+    + vikt. Flera loggningar samma dag är tillåtna.
+  - **Synk med profilens vikt, åt båda hållen**: ändras vikten i
+    profilen loggas den på dagens datum (`logWeightForToday()` -
+    uppdaterar dagens loggning om en finns, så upprepade sparningar
+    inte ger dubbletter; bara namn/längd ändrat loggar inget). En
+    loggning/redigering på det senaste datumet uppdaterar profilens vikt
+    (`syncProfileWeightFromLatestLog()`), och därmed kaloriberäkningen.
+    Loggningar bakåt i tiden, och borttagningar, rör inte profilen.
+  - **Viktutveckling**: linjediagram i ren SVG (`renderWeightChart()`),
+    tidsproportionell x-axel, y-axel med "snygga" steg som inte börjar
+    på noll (`niceWeightAxis()`), slutvärde utskrivet vid sista
+    punkten, och hårkors + tooltip vid hover. Punkterna visas bara vid
+    ≤ 30 loggningar. Ritas i containerns pixelbredd och om vid resize.
+    Ovanför grafen: senaste vikt och förändring sedan första loggningen.
+  - **Tidigare loggningar**: tabell (nyast först) med förändring mot
+    föregående loggning, "Redigera" (laddar in i formuläret, som för
+    pass) och "Ta bort".
 
 ## Datalagring: allt i Supabase
 
@@ -98,13 +125,17 @@ gäst-läge - `loadProfile()`/`loadSessions()` returnerar tomt om ingen
 eftersom `#app-content` är dolt tills man loggat in.
 
 CRUD går via: `loadProfile()`, `saveProfile()`, `loadSessions()`,
-`createSession()`, `updateSession()`, `removeSession()` i `app.js`.
+`createSession()`, `updateSession()`, `removeSession()`,
+`loadWeightLogs()`, `createWeightLog()`, `updateWeightLog()`,
+`removeWeightLog()` i `app.js`.
 
 **Datamodell** (se `profileFromRow`/`profileToRow`/`sessionFromRow`/
-`sessionToRow` i `app.js` för mappningen mot Supabase-kolumnerna):
+`sessionToRow`/`weightLogFromRow`/`weightLogToRow` i `app.js` för
+mappningen mot Supabase-kolumnerna):
 
 - Profil: `{ name, weightKg, heightCm }`
-- Pass: `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps }] }`
+- Viktloggning: `{ id, date, weightKg }` (tabellen `body_weight_logs`)
+- Pass: `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps }], notes }`
   - `type` är `"strength"`, `"running"`, `"walking"`, `"cycling"` eller
     `"elliptical"`.
   - `exercises` är alltid en tom lista `[]` utom för `"strength"`.
@@ -112,6 +143,8 @@ CRUD går via: `loadProfile()`, `saveProfile()`, `loadSessions()`,
     tempo i **min/km** för löpning/promenad/crosstrainer, eller
     snitthastighet i **km/h** för cykling (se `PACE_UNIT_BY_TYPE` i
     `app.js`).
+  - `notes` är valfri fritext (tom sträng i appen, `null` i databasen
+    när den saknas).
 
 ## Inloggning & molnlagring (Supabase)
 
@@ -175,6 +208,7 @@ create table public.workout_sessions (
   duration_min numeric not null,
   pace numeric,
   exercises jsonb not null default '[]'::jsonb,
+  notes text, -- tillagd i efterhand
   created_at timestamptz default now()
 );
 
@@ -188,6 +222,27 @@ create policy "Users manage their own profile"
 
 create policy "Users manage their own sessions"
   on public.workout_sessions for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+```
+
+Kroppsviktstabellen (skapad i efterhand, samma mönster). Tabellen är
+skapad; RLS-delen har Claude inte kunnat verifiera (anon-nyckeln ser
+en tom lista både med RLS och på en tom tabell utan RLS):
+
+```sql
+create table public.body_weight_logs (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  date date not null,
+  weight_kg numeric not null,
+  created_at timestamptz default now()
+);
+
+alter table public.body_weight_logs enable row level security;
+
+create policy "Users manage their own weight logs"
+  on public.body_weight_logs for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 ```
