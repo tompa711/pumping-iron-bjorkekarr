@@ -481,6 +481,60 @@ button.link-btn:hover {
   margin-top: 16px;
 }
 
+/* RPE-skala */
+.rpe-field {
+  margin-top: 16px;
+}
+
+.rpe-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.rpe-header output {
+  color: var(--accent-bright);
+  font-weight: 700;
+}
+
+.rpe-header .link-btn {
+  margin-left: auto;
+}
+
+.rpe-header .link-btn[hidden] {
+  display: none;
+}
+
+.rpe-field input[type="range"] {
+  width: 100%;
+  margin: 8px 0 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+
+.rpe-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+/* "Ej angiven": dämpa reglaget så det inte ser ut som ett valt 5. */
+.rpe-unset input[type="range"] {
+  opacity: 0.35;
+}
+
+.rpe-unset .rpe-header output {
+  color: var(--muted);
+  font-weight: 400;
+}
+
 textarea {
   resize: vertical;
   line-height: 1.4;
@@ -764,6 +818,79 @@ th { color: var(--accent); font-weight: 600; font-size: 0.8rem; text-transform: 
 
 .show-more-row .hint {
   margin: 0;
+}
+
+/* ---------- Senast sparade pass (under formuläret i Logga-vyn) ---------- */
+
+/* Döljs när det inte finns några pass. Egen klass istället för hidden,
+   eftersom showView() styr hidden-attributet på vyernas kort. */
+.card.is-empty {
+  display: none;
+}
+
+.last-saved-card {
+  transition: border-color 0.4s, box-shadow 0.4s;
+}
+
+.last-saved-card.just-saved {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(224, 178, 61, 0.2), 0 6px 20px rgba(0, 0, 0, 0.35);
+}
+
+.last-saved-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  margin-bottom: 8px;
+}
+
+.last-saved-header h2 {
+  margin: 0;
+}
+
+.saved-badge {
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #1a1204;
+  font-size: 0.85rem;
+  font-weight: 700;
+  animation: badge-pop 0.25s ease-out;
+}
+
+.saved-badge[hidden] {
+  display: none;
+}
+
+@keyframes badge-pop {
+  from { transform: scale(0.8); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+.last-saved-main {
+  margin: 0 0 8px;
+}
+
+#last-saved {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+#last-saved .ex-list,
+#last-saved .session-detail {
+  margin: 0 0 8px;
+}
+
+/* Kompakt: långa anteckningar kortas till tre rader här (hela texten
+   finns i historiken). */
+#last-saved .session-note {
+  margin: 0 0 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* ---------- Bekräftelse ("Passet sparat") ---------- */

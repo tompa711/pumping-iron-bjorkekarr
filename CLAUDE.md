@@ -55,7 +55,7 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   `apple-touch-icon.png`/`icon-512.png`) återanvänder exakt samma
   badge-design.
 
-## Vad appen gör (v1–v7)
+## Vad appen gör (v1–v9)
 
 - **Inloggning krävs**: appen visar bara inloggnings-/
   registreringsformulär (mejl + lösenord) tills man är inloggad. Resten
@@ -96,11 +96,35 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   Radbrytningar behålls (`white-space: pre-wrap`), och texten escapas
   via `escapeHtml()` innan den stoppas in i historikens HTML-mall
   (gäller nu även övningsnamnen där).
-- **Redigera pass**: Varje utfällt pass i historiken har en
-  "Redigera"-knapp som byter till Logga-vyn och laddar in passet i
-  formuläret (datum, längd, typ, tempo/fart, ev. övningar, anteckning).
-  Efter "Uppdatera pass" skickas man tillbaka till Historik. "Avbryt
-  redigering" återgår till att logga ett nytt pass.
+- **Upplevd ansträngning (RPE)** per pass: skjutreglage 1-10 i
+  pass-formuläret (`#session-rpe`), 5 förvalt för nya pass, med
+  beskrivning bredvid värdet (`RPE_DESCRIPTIONS`, t.ex. "7 – Tungt").
+  Eftersom ett reglage alltid har ett värde hålls "ej angiven" i en
+  egen flagga (`rpeIsSet`, sätts via `setRpeField()`): gamla pass utan
+  RPE öppnas i redigeringen som "Ej angiven" (dämpat reglage) och
+  förblir `null` om man sparar utan att röra reglaget. Värdet sätts
+  först vid dragning/tryck/piltangent; "Ingen RPE"-knappen nollar det.
+  I historiken visas "RPE 7" på den kompakta raden och
+  "Ansträngning: RPE 7 – Tungt" i det utfällda passet - pass utan RPE
+  visas helt utan.
+- **Senast sparade pass** (kort under formuläret i Logga-vyn,
+  `#last-saved-card`, `renderLastSavedCard()`): datum, typ, längd, RPE,
+  övningar/tempo och anteckning (kortad till tre rader) i kompakt form,
+  plus en "Redigera"-knapp. Visar passet man senast sparade/uppdaterade
+  (`lastSavedSessionId`), annars - vid start eller om det tagits bort -
+  det senast **skapade** passet (högst id), oavsett passets datum. Direkt
+  efter sparning visas "✓ Sparat"/"✓ Uppdaterat" + guldkant i 6 s
+  (`justSaved`); det ersätter toasten för nya pass. Döljs helt när det
+  inte finns några pass (klassen `is-empty`, inte `hidden` - det
+  styrs av `showView()`). Övningar/tempo och anteckning byggs med samma
+  helpers som historiken (`sessionDetailsHtml()`, `sessionNoteHtml()`).
+- **Redigera pass**: "Redigera" (i historiken eller på senast
+  sparade-kortet) byter till Logga-vyn och laddar in passet i formuläret
+  (datum, längd, typ, tempo/fart, ev. övningar, RPE, anteckning). Efter
+  "Uppdatera pass" kommer man tillbaka dit man kom ifrån
+  (`startEditingSession(id, returnView)` / `editReturnView`): Historik
+  (med toast) eller kvar i Logga-vyn (med "✓ Uppdaterat" på kortet).
+  "Avbryt redigering" återgår till att logga ett nytt pass.
 - **Historik** (egen vy): kompakt lista, en rad per pass (veckodag +
   datum, typ, längd, uträknade kalorier - baserat på profilens vikt,
   passets längd och en MET-nivå från tempot/farten för konditionspass).
@@ -172,7 +196,7 @@ mappningen mot Supabase-kolumnerna):
 
 - Profil: `{ name, weightKg, heightCm }`
 - Viktloggning: `{ id, date, weightKg }` (tabellen `body_weight_logs`)
-- Pass: `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps }], notes }`
+- Pass: `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps }], notes, rpe }`
   - `type` är `"strength"`, `"running"`, `"walking"`, `"cycling"` eller
     `"elliptical"`.
   - `exercises` är alltid en tom lista `[]` utom för `"strength"`.
@@ -182,6 +206,9 @@ mappningen mot Supabase-kolumnerna):
     `app.js`).
   - `notes` är valfri fritext (tom sträng i appen, `null` i databasen
     när den saknas).
+  - `rpe` är upplevd ansträngning, heltal 1-10, eller `null` = ej
+    angiven (alla pass loggade innan RPE fanns). `null` får aldrig
+    tolkas eller visas som 5.
 
 ## Inloggning & molnlagring (Supabase)
 
@@ -255,6 +282,7 @@ create table public.workout_sessions (
   pace numeric,
   exercises jsonb not null default '[]'::jsonb,
   notes text, -- tillagd i efterhand
+  rpe smallint, -- tillagd i efterhand: 1-10, null = ej angiven
   created_at timestamptz default now()
 );
 

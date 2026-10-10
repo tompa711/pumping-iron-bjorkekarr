@@ -116,6 +116,7 @@ function sessionFromRow(row) {
     pace: row.pace,
     exercises: row.exercises || [],
     notes: row.notes || "",
+    rpe: row.rpe ?? null, // null = ej angiven (t.ex. pass loggade innan RPE fanns)
   };
 }
 
@@ -128,6 +129,7 @@ function sessionToRow(session) {
     pace: session.pace,
     exercises: session.exercises,
     notes: session.notes || null, // tom anteckning sparas som null
+    rpe: session.rpe ?? null,
   };
 }
 
@@ -842,6 +844,50 @@ function updateSessionTypeUI() {
 
 document.getElementById("session-type").addEventListener("change", updateSessionTypeUI);
 
+// ---------- RPE (upplevd ansträngning, 1-10) ----------
+
+// Ett skjutreglage har alltid ett värde, så "ej angiven" hålls i en egen
+// flagga. Annars skulle ett gammalt pass utan RPE få 5 bara av att man
+// öppnar det i redigeringsflödet och sparar.
+const RPE_DESCRIPTIONS = {
+  1: "Mycket lätt", 2: "Mycket lätt", 3: "Lätt", 4: "Lätt", 5: "Måttligt",
+  6: "Måttligt", 7: "Tungt", 8: "Tungt", 9: "Mycket tungt", 10: "Max",
+};
+let rpeIsSet = true;
+
+function setRpeField(rpe) {
+  rpeIsSet = rpe != null;
+  document.getElementById("session-rpe").value = rpeIsSet ? rpe : 5;
+  updateRpeDisplay();
+}
+
+function updateRpeDisplay() {
+  const value = parseInt(document.getElementById("session-rpe").value, 10);
+  document.getElementById("session-rpe-value").textContent = rpeIsSet
+    ? `${value} – ${RPE_DESCRIPTIONS[value]}`
+    : "Ej angiven – dra för att sätta";
+  document.getElementById("rpe-field").classList.toggle("rpe-unset", !rpeIsSet);
+  document.getElementById("session-rpe-clear").hidden = !rpeIsSet;
+}
+
+(function wireRpeField() {
+  const input = document.getElementById("session-rpe");
+  // pointerdown också, så att ett tryck direkt på 5 räknas som ett val
+  // även om värdet inte ändras (då fyrar inte "input").
+  const VALUE_KEYS = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"];
+  function markSet() {
+    rpeIsSet = true;
+    updateRpeDisplay();
+  }
+  input.addEventListener("input", markSet);
+  input.addEventListener("pointerdown", markSet);
+  // Bara tangenter som ändrar värdet - inte t.ex. Tab för att lämna fältet.
+  input.addEventListener("keydown", (e) => {
+    if (VALUE_KEYS.includes(e.key)) markSet();
+  });
+  document.getElementById("session-rpe-clear").addEventListener("click", () => setRpeField(null));
+})();
+
 // ---------- Formulär-läge: nytt pass vs. redigera pass ----------
 
 function resetSessionForm() {
@@ -851,12 +897,19 @@ function resetSessionForm() {
   addExerciseRow();
   updateSessionTypeUI();
   document.getElementById("session-date").valueAsDate = new Date();
+  setRpeField(5);
   document.getElementById("session-form-title").textContent = "Logga nytt pass";
   document.getElementById("session-submit-btn").textContent = "Spara pass";
   document.getElementById("cancel-edit-btn").hidden = true;
 }
 
-async function startEditingSession(id) {
+// Vart man skickas efter "Uppdatera pass": tillbaka till historiken om man
+// kom därifrån, eller stanna i Logga-vyn om man kom från "Senast sparade
+// pass"-kortet.
+let editReturnView = "historik";
+
+async function startEditingSession(id, returnView = "historik") {
+  editReturnView = returnView;
   const sessions = await loadSessions();
   const session = sessions.find((s) => s.id === id);
   if (!session) return;
@@ -867,6 +920,7 @@ async function startEditingSession(id) {
   document.getElementById("session-duration").value = session.durationMin;
   document.getElementById("session-pace").value = session.pace || "";
   document.getElementById("session-notes").value = session.notes;
+  setRpeField(session.rpe);
 
   document.getElementById("exercise-rows").innerHTML = "";
   if (session.exercises.length > 0) {
@@ -901,6 +955,7 @@ document.getElementById("session-form").addEventListener("submit", async (e) => 
   const date = document.getElementById("session-date").value;
   const durationMin = parseFloat(document.getElementById("session-duration").value);
   const notes = document.getElementById("session-notes").value.trim();
+  const rpe = rpeIsSet ? parseInt(document.getElementById("session-rpe").value, 10) : null;
 
   let exercises = [];
   let pace = null;
@@ -925,20 +980,30 @@ document.getElementById("session-form").addEventListener("submit", async (e) => 
     }
   }
 
-  const ok = editingId
-    ? await updateSession(Number(editingId), { type, date, durationMin, exercises, pace, notes })
-    : !!(await createSession({ type, date, durationMin, exercises, pace, notes }));
-  if (!ok) return; // felet har redan visats; behåll det man fyllt i
+  const changes = { type, date, durationMin, exercises, pace, notes, rpe };
+  let savedId;
+  if (editingId) {
+    if (!(await updateSession(Number(editingId), changes))) return; // felet har redan visats
+    savedId = Number(editingId);
+  } else {
+    const created = await createSession(changes);
+    if (!created) return; // felet har redan visats; behåll det man fyllt i
+    savedId = created.id;
+  }
 
+  lastSavedSessionId = savedId;
+  justSaved = { id: savedId, label: editingId ? "✓ Uppdaterat" : "✓ Sparat" };
   resetSessionForm();
   await refreshHistoryUI();
-  // Historiken syns inte i Logga-vyn, så bekräfta att det gick. Kom man
-  // från "Redigera" i historiken skickas man tillbaka dit.
-  if (editingId) {
+
+  // Kom man från "Redigera" i historiken skickas man tillbaka dit (där
+  // syns inte kortet, så bekräfta med en toast). Annars bekräftar
+  // "Senast sparade pass"-kortet direkt under formuläret.
+  if (editingId && editReturnView === "historik") {
     showToast("Passet uppdaterat ✓");
     goToView("historik");
   } else {
-    showToast("Passet sparat ✓");
+    document.getElementById("last-saved-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 });
 
@@ -994,6 +1059,25 @@ function formatSessionDate(dateStr) {
   return d.toLocaleDateString("sv-SE", opts);
 }
 
+// Övningar (styrka) eller tempo/snittfart (kondition) - delas av
+// historiken och "Senast sparade pass"-kortet.
+function sessionDetailsHtml(s) {
+  const type = s.type || "strength";
+  if (type === "strength") {
+    return `<ul class="ex-list">${s.exercises
+      .map((ex) => `<li>${escapeHtml(ex.name)}: ${ex.weight} kg × ${ex.reps} reps</li>`)
+      .join("")}</ul>`;
+  }
+  const perKm = PACE_UNIT_BY_TYPE[type] === "minPerKm";
+  return `<p class="session-detail"><span class="session-detail-label">${perKm ? "Tempo" : "Snittfart"}:</span> ${s.pace ?? "–"} ${perKm ? "min/km" : "km/h"}</p>`;
+}
+
+function sessionNoteHtml(s) {
+  return s.notes
+    ? `<p class="session-note"><span class="note-label">Anteckning:</span> ${escapeHtml(s.notes)}</p>`
+    : "";
+}
+
 function renderHistory(allSessions, profile) {
   lastHistoryArgs = [allSessions, profile];
   const el = document.getElementById("history");
@@ -1008,23 +1092,21 @@ function renderHistory(allSessions, profile) {
   const items = visible
     .map((s) => {
       const type = s.type || "strength";
-      const paceUnit = PACE_UNIT_BY_TYPE[type];
 
       const meta = [`${s.durationMin} min`];
       if (profile && profile.weightKg) {
         meta.push(`${computeCaloriesBurned(s.durationMin, profile.weightKg, type, s.pace)} kcal`);
       }
+      if (s.rpe != null) meta.push(`RPE ${s.rpe}`); // gamla pass utan RPE visas utan
 
-      const details =
-        type === "strength"
-          ? `<ul class="ex-list">${s.exercises
-              .map((ex) => `<li>${escapeHtml(ex.name)}: ${ex.weight} kg × ${ex.reps} reps</li>`)
-              .join("")}</ul>`
-          : `<p class="session-detail"><span class="session-detail-label">${paceUnit === "minPerKm" ? "Tempo" : "Snittfart"}:</span> ${s.pace ?? "–"} ${paceUnit === "minPerKm" ? "min/km" : "km/h"}</p>`;
+      const details = sessionDetailsHtml(s);
 
-      const note = s.notes
-        ? `<p class="session-note"><span class="note-label">Anteckning:</span> ${escapeHtml(s.notes)}</p>`
-        : "";
+      const rpeDetail =
+        s.rpe != null
+          ? `<p class="session-detail"><span class="session-detail-label">Ansträngning:</span> RPE ${s.rpe} – ${RPE_DESCRIPTIONS[s.rpe]}</p>`
+          : "";
+
+      const note = sessionNoteHtml(s);
 
       return `
         <li>
@@ -1038,6 +1120,7 @@ function renderHistory(allSessions, profile) {
             </summary>
             <div class="session-body">
               ${details}
+              ${rpeDetail}
               ${note}
               <div class="button-row">
                 <button class="secondary edit-link" data-id="${s.id}">Redigera</button>
@@ -1338,6 +1421,60 @@ function renderStatistics(sessions, profile) {
   renderPersonalRecords(sessions);
 }
 
+// ---------- Senast sparade pass (kort under formuläret) ----------
+
+// Passet man senast sparade/uppdaterade i den här sessionen. Vid start
+// (eller om det tagits bort) visas istället det senast skapade passet -
+// högst id, eftersom id är en stigande identity-kolumn - oavsett datum.
+let lastSavedSessionId = null;
+let justSaved = null; // { id, label } - visar "✓ Sparat" en stund efter sparning
+let justSavedTimer = null;
+
+function renderLastSavedCard(sessions) {
+  const card = document.getElementById("last-saved-card");
+  const el = document.getElementById("last-saved");
+  const badge = document.getElementById("last-saved-badge");
+
+  const session =
+    sessions.find((s) => s.id === lastSavedSessionId) ||
+    sessions.reduce((latest, s) => (!latest || s.id > latest.id ? s : latest), null);
+
+  card.classList.toggle("is-empty", !session);
+  if (!session) {
+    el.innerHTML = "";
+    return;
+  }
+
+  const type = session.type || "strength";
+  const meta = [formatSessionDate(session.date), SESSION_TYPE_LABELS[type] || type, `${session.durationMin} min`];
+  if (session.rpe != null) meta.push(`RPE ${session.rpe}`);
+
+  el.innerHTML = `
+    <p class="last-saved-main">${meta.map((m, i) => (i === 0 ? `<strong>${m}</strong>` : m)).join(" · ")}</p>
+    ${sessionDetailsHtml(session)}
+    ${sessionNoteHtml(session)}
+    <button type="button" class="secondary last-saved-edit">Redigera</button>
+  `;
+  el.querySelector(".last-saved-edit").addEventListener("click", () =>
+    startEditingSession(session.id, "logga")
+  );
+
+  // Bekräftelsen ("✓ Sparat" + guldkant) visas bara för passet som
+  // precis sparades, och tonas bort efter en stund.
+  const highlight = justSaved && justSaved.id === session.id;
+  badge.hidden = !highlight;
+  badge.textContent = highlight ? justSaved.label : "";
+  card.classList.toggle("just-saved", highlight);
+  if (highlight) {
+    clearTimeout(justSavedTimer);
+    justSavedTimer = setTimeout(() => {
+      justSaved = null;
+      badge.hidden = true;
+      card.classList.remove("just-saved");
+    }, 6000);
+  }
+}
+
 let lastExerciseStatsByName = new Map();
 
 async function refreshHistoryUI() {
@@ -1346,6 +1483,7 @@ async function refreshHistoryUI() {
   renderRestDayCounter(sessions);
   renderStreakCounter(sessions);
   renderHistory(sessions, profile);
+  renderLastSavedCard(sessions);
   renderStatistics(sessions, profile);
 }
 

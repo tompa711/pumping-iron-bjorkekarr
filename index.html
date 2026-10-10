@@ -15,7 +15,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
   <!-- ?v= tvingar hemskärmsappen att hämta nya filer efter en uppdatering - bumpa vid varje ändring av style.css/app.js (se CLAUDE.md). -->
-  <link rel="stylesheet" href="style.css?v=2026-09-27.1">
+  <link rel="stylesheet" href="style.css?v=2026-10-10.1">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.116.0/dist/umd/supabase.js"></script>
 </head>
 <body>
@@ -228,6 +228,19 @@
             </div>
           </div>
 
+          <!-- RPE: 5 förvalt för nya pass. "Ej angiven"-läget (gamla pass
+               utan RPE, eller efter "Ingen RPE") styrs i app.js, se
+               setRpeField(). -->
+          <div class="rpe-field" id="rpe-field">
+            <div class="rpe-header">
+              <label for="session-rpe">Upplevd ansträngning (RPE)</label>
+              <output id="session-rpe-value" for="session-rpe"></output>
+              <button type="button" id="session-rpe-clear" class="link-btn">Ingen RPE</button>
+            </div>
+            <input type="range" id="session-rpe" min="1" max="10" step="1" value="5">
+            <div class="rpe-scale" aria-hidden="true"><span>1 · Mycket lätt</span><span>10 · Max</span></div>
+          </div>
+
           <label class="notes-label">
             Anteckning (valfritt)
             <textarea id="session-notes" rows="3" maxlength="2000"
@@ -239,6 +252,17 @@
             <button type="button" id="cancel-edit-btn" class="secondary" hidden>Avbryt redigering</button>
           </div>
         </form>
+      </section>
+
+      <!-- ===== SENAST SPARADE PASS (under formuläret i Logga-vyn) =====
+           Klassen is-empty (satt i renderLastSavedCard()) döljer kortet när
+           det inte finns några pass - hidden-attributet styrs av showView(). -->
+      <section class="card last-saved-card is-empty" id="last-saved-card" data-view="logga">
+        <div class="last-saved-header">
+          <h2>Senast sparade pass</h2>
+          <span class="saved-badge" id="last-saved-badge" role="status" hidden></span>
+        </div>
+        <div id="last-saved"></div>
       </section>
 
       <!-- ===== HISTORIK ===== -->
@@ -312,6 +336,6 @@
     </div>
   </dialog>
 
-  <script src="app.js?v=2026-09-27.1"></script>
+  <script src="app.js?v=2026-10-10.1"></script>
 </body>
 </html>
