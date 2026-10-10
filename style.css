@@ -271,10 +271,65 @@ button.link-btn:hover {
   grid-template-columns: 2fr 1fr 1fr auto;
   gap: 8px;
   align-items: end;
-  margin-bottom: 8px;
+  margin-bottom: 16px; /* luft mellan raderna, som nu har reglaget som andra våning */
 }
 
 .exercise-row label { font-size: 0.75rem; }
+
+/* "Räkna i sekunder istället för reps" - egen rad under fälten, ritad
+   som en strömbrytare (checkbox med role="switch"). */
+.exercise-row .ex-timed-toggle {
+  grid-column: 1 / -1;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-top: -2px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ex-timed-toggle input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 34px;
+  min-width: 34px;
+  height: 20px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #101012;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.ex-timed-toggle input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.ex-timed-toggle input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.ex-timed-toggle input[type="checkbox"]:checked::before {
+  transform: translateX(14px);
+  background: #1a1204;
+}
+
+.ex-timed-toggle input[type="checkbox"]:focus-visible {
+  box-shadow: 0 0 0 3px rgba(224, 178, 61, 0.3);
+}
 
 /* På smala skärmar (mobil) blir 4 fasta kolumner för trångt - låt
    övningsnamnet ta en egen rad ovanför vikt/reps/ta bort-knappen. */

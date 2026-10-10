@@ -694,6 +694,7 @@ function wireExerciseAutocomplete(row) {
   const list = row.querySelector(".ex-suggestions");
   const weightInput = row.querySelector(".ex-weight");
   const repsInput = row.querySelector(".ex-reps");
+  const secondsInput = row.querySelector(".ex-seconds");
   let debounceTimer = null;
   let controller = null;
 
@@ -702,13 +703,21 @@ function wireExerciseAutocomplete(row) {
     list.innerHTML = "";
   }
 
-  // Fyller i senast loggade vikt/reps för övningen, men bara i fält som
-  // fortfarande är tomma - skriver aldrig över något man redan angett.
+  // Fyller i senast loggade vikt/reps (eller sekunder) för övningen, men
+  // bara i fält som fortfarande är tomma - skriver aldrig över något man
+  // redan angett. Återställer även reps/sekunder-läget (applyAutoTimedMode).
   function autofillFromHistory(name) {
+    applyAutoTimedMode(row, name);
     const stats = lastExerciseStatsByName.get(name.trim().toLowerCase());
     if (!stats) return;
     if (!weightInput.value) weightInput.value = stats.weight;
-    if (!repsInput.value) repsInput.value = stats.reps;
+    const rowTimed = row.querySelector(".ex-timed").checked;
+    if (rowTimed !== stats.timed) return; // man har själv valt annat läge
+    if (stats.timed) {
+      if (!secondsInput.value && stats.seconds) secondsInput.value = stats.seconds;
+    } else if (!repsInput.value) {
+      repsInput.value = stats.reps;
+    }
   }
 
   function renderSuggestions(term, results) {
@@ -758,6 +767,7 @@ function wireExerciseAutocomplete(row) {
     clearTimeout(debounceTimer);
     // Namnet har ändrats - ett tidigare valt wger-förslag gäller inte längre.
     wgerExerciseByRow.delete(row);
+    applyAutoTimedMode(row, input.value);
 
     if (term.length < 2) {
       hideSuggestions();
@@ -783,6 +793,55 @@ function wireExerciseAutocomplete(row) {
   });
 }
 
+// ---------- Tidsbaserade övningar (t.ex. planka) ----------
+
+// En övning är tidsbaserad om den har ett `seconds`-värde i sitt
+// jsonb-objekt ({ name, weight, reps: null, seconds }). Reps-övningar
+// sparas med `seconds: null`; gamla övningar saknar fältet helt. Båda är
+// vanliga reps-övningar, precis som förut.
+function isTimedExercise(ex) {
+  return ex.seconds != null;
+}
+
+// Övningsnamn som slår på sekund-läget automatiskt. Jämförs utan
+// mellanslag/bindestreck, så "Wall-sit" och "Side Plank" också matchar.
+const TIMED_EXERCISE_KEYWORDS = ["plank", "sidoplanka", "wallsit", "deadhang"];
+
+function looksLikeTimedExercise(name) {
+  const normalized = name.toLowerCase().replace(/[\s-]/g, "");
+  return TIMED_EXERCISE_KEYWORDS.some((kw) => normalized.includes(kw));
+}
+
+function setRowTimed(row, timed) {
+  row.querySelector(".ex-timed").checked = timed;
+  row.querySelector(".ex-reps-label").hidden = timed;
+  row.querySelector(".ex-seconds-label").hidden = !timed;
+}
+
+// Läget på en rad: det man valde senast för samma övningsnamn, annars
+// nyckelorden ovan, annars av. Gör inget om man själv har växlat på raden
+// (eller raden laddats in från ett sparat pass) - då gäller det valet.
+// Övningar loggade innan tidsläget fanns räknas inte som ett val (en
+// gammal "Plank, 1 rep" ska inte låsa planka i reps-läge).
+function applyAutoTimedMode(row, name) {
+  if (row.dataset.timedTouched) return;
+  const stats = lastExerciseStatsByName.get(name.trim().toLowerCase());
+  setRowTimed(row, stats && stats.modeChosen ? stats.timed : looksLikeTimedExercise(name));
+}
+
+function formatDuration(totalSeconds) {
+  const min = Math.floor(totalSeconds / 60);
+  const sec = totalSeconds % 60;
+  if (min === 0) return `${sec} s`;
+  return sec === 0 ? `${min} min` : `${min} min ${sec} s`;
+}
+
+// "80 kg × 8 reps", "22 kg × 1 min 30 s" eller bara "45 s" (utan vikt).
+function formatExerciseResult(ex) {
+  if (!isTimedExercise(ex)) return `${ex.weight} kg × ${ex.reps} reps`;
+  return ex.weight > 0 ? `${ex.weight} kg × ${formatDuration(ex.seconds)}` : formatDuration(ex.seconds);
+}
+
 // ---------- Nytt pass: dynamiska övningsrader ----------
 
 function addExerciseRow() {
@@ -801,13 +860,26 @@ function addExerciseRow() {
       Vikt (kg)
       <input type="number" class="ex-weight" min="0" step="0.5" placeholder="T.ex. 60">
     </label>
-    <label>
+    <label class="ex-reps-label">
       Reps
       <input type="number" class="ex-reps" min="1" placeholder="T.ex. 10">
     </label>
+    <label class="ex-seconds-label" hidden>
+      Sekunder
+      <input type="number" class="ex-seconds" min="1" placeholder="T.ex. 60">
+    </label>
     <button type="button" class="secondary remove-row">✕</button>
+    <label class="ex-timed-toggle">
+      <input type="checkbox" class="ex-timed" role="switch">
+      Räkna i sekunder istället för reps
+    </label>
   `;
   row.querySelector(".remove-row").addEventListener("click", () => row.remove());
+  // Ett manuellt val gäller - då slutar raden byta läge automatiskt.
+  row.querySelector(".ex-timed").addEventListener("change", (e) => {
+    row.dataset.timedTouched = "1";
+    setRowTimed(row, e.target.checked);
+  });
   wireExerciseAutocomplete(row);
   container.appendChild(row);
 }
@@ -929,7 +1001,12 @@ async function startEditingSession(id, returnView = "historik") {
       const row = document.getElementById("exercise-rows").lastElementChild;
       row.querySelector(".ex-name").value = ex.name;
       row.querySelector(".ex-weight").value = ex.weight;
-      row.querySelector(".ex-reps").value = ex.reps;
+      // Läget kommer från det sparade passet och ska inte ändras automatiskt
+      // om man redigerar namnet.
+      row.dataset.timedTouched = "1";
+      setRowTimed(row, isTimedExercise(ex));
+      if (isTimedExercise(ex)) row.querySelector(".ex-seconds").value = ex.seconds;
+      else row.querySelector(".ex-reps").value = ex.reps;
     });
   } else {
     addExerciseRow();
@@ -964,8 +1041,16 @@ document.getElementById("session-form").addEventListener("submit", async (e) => 
     document.querySelectorAll("#exercise-rows .exercise-row").forEach((row) => {
       const name = row.querySelector(".ex-name").value.trim();
       const weight = parseFloat(row.querySelector(".ex-weight").value) || 0;
-      const reps = parseInt(row.querySelector(".ex-reps").value, 10) || 0;
-      if (name) exercises.push({ name, weight, reps });
+      if (!name) return;
+      if (row.querySelector(".ex-timed").checked) {
+        // Tidsövning: sekunderna sparas som extra fält i övningens jsonb.
+        const seconds = parseInt(row.querySelector(".ex-seconds").value, 10) || 0;
+        exercises.push({ name, weight, reps: null, seconds });
+      } else {
+        const reps = parseInt(row.querySelector(".ex-reps").value, 10) || 0;
+        // seconds: null = reps-läge aktivt valt (se applyAutoTimedMode).
+        exercises.push({ name, weight, reps, seconds: null });
+      }
     });
 
     if (exercises.length === 0) {
@@ -1065,7 +1150,7 @@ function sessionDetailsHtml(s) {
   const type = s.type || "strength";
   if (type === "strength") {
     return `<ul class="ex-list">${s.exercises
-      .map((ex) => `<li>${escapeHtml(ex.name)}: ${ex.weight} kg × ${ex.reps} reps</li>`)
+      .map((ex) => `<li>${escapeHtml(ex.name)}: ${formatExerciseResult(ex)}</li>`)
       .join("")}</ul>`;
   }
   const perKm = PACE_UNIT_BY_TYPE[type] === "minPerKm";
@@ -1209,31 +1294,49 @@ function computeWeeklyAggregate(sessions, valueFn) {
     .map((entry) => ({ label: formatWeekLabel(entry.monday), value: Math.round(entry.value) }));
 }
 
+// Per övningsnamn: reps-övningar får högsta vikt + högsta volym (vikt ×
+// reps i ett set). Tidsövningar har ingen meningsfull volym - där är
+// rekordet längsta tid (plus högsta vikt, om man kört med vikt). Har en
+// övning loggats på tid räknas bara tidsloggningarna, så att t.ex. en
+// gammal planka loggad som "1 rep" inte blandas in.
 function computePersonalRecords(sessions) {
-  const records = new Map(); // övningsnamn -> { maxWeight, maxVolume }
+  const entriesByName = new Map(); // övningsnamn -> [övningar]
 
   sessions
     .filter((s) => (s.type || "strength") === "strength")
     .forEach((s) => {
       s.exercises.forEach((ex) => {
         if (!ex.name) return;
-        const volume = ex.weight * ex.reps;
-        const existing = records.get(ex.name) || { maxWeight: null, maxVolume: null };
-
-        if (!existing.maxWeight || ex.weight > existing.maxWeight.weight) {
-          existing.maxWeight = { weight: ex.weight, reps: ex.reps };
-        }
-        if (!existing.maxVolume || volume > existing.maxVolume.volume) {
-          existing.maxVolume = { weight: ex.weight, reps: ex.reps, volume };
-        }
-
-        records.set(ex.name, existing);
+        if (!entriesByName.has(ex.name)) entriesByName.set(ex.name, []);
+        entriesByName.get(ex.name).push(ex);
       });
     });
 
-  return Array.from(records.entries())
-    .map(([name, r]) => ({ name, ...r }))
-    .sort((a, b) => a.name.localeCompare(b.name, "sv"));
+  const records = [];
+  entriesByName.forEach((entries, name) => {
+    const timedEntries = entries.filter(isTimedExercise);
+
+    if (timedEntries.length > 0) {
+      const longest = timedEntries.reduce((best, ex) => (ex.seconds > best.seconds ? ex : best));
+      const weighted = timedEntries.filter((ex) => ex.weight > 0);
+      const heaviest = weighted.length
+        ? weighted.reduce((best, ex) => (ex.weight > best.weight ? ex : best))
+        : null;
+      records.push({ name, timed: true, longest, heaviest });
+      return;
+    }
+
+    let maxWeight = null;
+    let maxVolume = null;
+    entries.forEach((ex) => {
+      const volume = ex.weight * ex.reps;
+      if (!maxWeight || ex.weight > maxWeight.weight) maxWeight = { weight: ex.weight, reps: ex.reps };
+      if (!maxVolume || volume > maxVolume.volume) maxVolume = { weight: ex.weight, reps: ex.reps, volume };
+    });
+    records.push({ name, timed: false, maxWeight, maxVolume });
+  });
+
+  return records.sort((a, b) => a.name.localeCompare(b.name, "sv"));
 }
 
 // Antal dagar sedan det senast loggade passet (vilken passtyp som helst).
@@ -1310,7 +1413,15 @@ function computeLastExerciseStats(sessions) {
         if (!ex.name) return;
         const key = ex.name.trim().toLowerCase();
         if (!map.has(key)) {
-          map.set(key, { weight: ex.weight, reps: ex.reps });
+          map.set(key, {
+            weight: ex.weight,
+            reps: ex.reps,
+            seconds: ex.seconds ?? null,
+            timed: isTimedExercise(ex),
+            // Övningar sparade innan tidsläget fanns saknar `seconds` helt -
+            // där har man aldrig gjort något val, så nyckelorden får avgöra.
+            modeChosen: "seconds" in ex,
+          });
         }
       });
     });
@@ -1391,8 +1502,16 @@ function renderPersonalRecords(sessions) {
         <tbody>
           <tr>
             ${responsiveCell("Övning", escapeHtml(r.name))}
-            ${responsiveCell("Högsta vikt", `${r.maxWeight.weight} kg × ${r.maxWeight.reps}`)}
-            ${responsiveCell("Högsta volym", `${r.maxVolume.volume.toLocaleString("sv-SE")} kg (${r.maxVolume.weight} kg × ${r.maxVolume.reps})`)}
+            ${
+              r.timed
+                ? responsiveCell("Högsta vikt", r.heaviest ? `${r.heaviest.weight} kg × ${formatDuration(r.heaviest.seconds)}` : "–")
+                : responsiveCell("Högsta vikt", `${r.maxWeight.weight} kg × ${r.maxWeight.reps}`)
+            }
+            ${
+              r.timed
+                ? responsiveCell("Längsta tid", `${formatDuration(r.longest.seconds)}${r.longest.weight > 0 ? ` (${r.longest.weight} kg)` : ""}`)
+                : responsiveCell("Högsta volym", `${r.maxVolume.volume.toLocaleString("sv-SE")} kg (${r.maxVolume.weight} kg × ${r.maxVolume.reps})`)
+            }
           </tr>
         </tbody>
       `
@@ -1406,7 +1525,7 @@ function renderPersonalRecords(sessions) {
           <tr>
             <th>Övning</th>
             <th>Högsta vikt</th>
-            <th>Högsta volym (ett set)</th>
+            <th>Högsta volym (ett set) / längsta tid</th>
           </tr>
         </thead>
         ${rows}

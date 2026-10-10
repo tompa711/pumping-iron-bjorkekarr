@@ -55,7 +55,7 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
   `apple-touch-icon.png`/`icon-512.png`) återanvänder exakt samma
   badge-design.
 
-## Vad appen gör (v1–v9)
+## Vad appen gör (v1–v10)
 
 - **Inloggning krävs**: appen visar bara inloggnings-/
   registreringsformulär (mejl + lösenord) tills man är inloggad. Resten
@@ -82,9 +82,23 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
     (lägre värde = snabbare). Cykling anges som **snitthastighet i
     km/h** (högre värde = snabbare) – det är så farten normalt anges
     för respektive aktivitet.
+- **Tidsbaserade övningar** (t.ex. planka): varje övningsrad har
+  omkopplaren "Räkna i sekunder istället för reps" (`.ex-timed`,
+  avstängd som standard). På = fältet Reps byts mot Sekunder; vikt är
+  fortfarande valfri. Läget på en rad bestäms automatiskt
+  (`applyAutoTimedMode()`) i den här ordningen: senast valda läge för
+  samma övningsnamn → nyckelorden i `TIMED_EXERCISE_KEYWORDS` (plank,
+  sidoplanka, wall sit, dead hang; jämförs utan mellanslag/bindestreck)
+  → av. Gamla övningar utan `seconds`-fält räknas inte som ett val (så
+  en gammal "Plank, 1 rep" inte låser planka i reps-läge). Har man själv
+  växlat på raden, eller raden laddats in vid redigering
+  (`row.dataset.timedTouched`), byts läget aldrig automatiskt.
+  Visas som "Plank: 22 kg × 1 min" eller "Wall sit: 1 min 30 s"
+  (`formatExerciseResult()`, `formatDuration()`).
 - **Auto-ifylld vikt/reps**: När man skriver in ett övningsnamn man
   loggat förut (matchar exakt, oavsett skiftläge) fylls senast loggade
-  vikt och reps i automatiskt i de fälten - bara om de är tomma, så det
+  vikt och reps (eller sekunder, för tidsövningar - och reps/sekunder-
+  läget) i automatiskt i de fälten - bara om de är tomma, så det
   aldrig skriver över något man redan fyllt i för hand. Triggas både
   när man klickar ett wger-sökförslag och när man lämnar fältet
   (`autofillFromHistory()` i `wireExerciseAutocomplete()`, `app.js`).
@@ -150,7 +164,10 @@ upphovsrättsskyddade fotot (Arnold Schwarzenegger-affischen) – headern
     (`renderWeeklyBarChart()`).
   - **Personliga rekord**: en tabell per övningsnamn (bara styrkepass)
     med högsta vikt någonsin loggad och högsta volym i ett enskilt set
-    (vikt × reps) någonsin loggad. Övningsnamn matchas exakt
+    (vikt × reps) någonsin loggad. **Tidsövningar** räknas inte in i
+    volym; där är rekordet **längsta tid** (plus högsta vikt om man kört
+    med vikt). Har en övning några tidsloggningar används bara dem för
+    den övningens rekord (gamla reps-loggningar av t.ex. planka ignoreras). Övningsnamn matchas exakt
     (skiftlägeskänsligt för visning, men grupperas skiftlägesokänsligt).
   - Allt beräknas client-side i `app.js` från samma sessionsdata som
     historiken, ingen extra Supabase-fråga.
@@ -196,10 +213,18 @@ mappningen mot Supabase-kolumnerna):
 
 - Profil: `{ name, weightKg, heightCm }`
 - Viktloggning: `{ id, date, weightKg }` (tabellen `body_weight_logs`)
-- Pass: `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps }], notes, rpe }`
+- Pass: `{ id, type, date, durationMin, pace, exercises: [{ name, weight, reps, seconds }], notes, rpe }`
   - `type` är `"strength"`, `"running"`, `"walking"`, `"cycling"` eller
     `"elliptical"`.
   - `exercises` är alltid en tom lista `[]` utom för `"strength"`.
+    Tre former finns i databasen (jsonb, ingen egen kolumn):
+    - **Tidsövning**: `{ name, weight, reps: null, seconds: 60 }`
+      (`isTimedExercise(ex)` = `seconds != null`).
+    - **Reps-övning, sparad efter att tidsläget infördes**:
+      `{ name, weight, reps, seconds: null }` - `seconds: null` betyder
+      att reps-läget är ett aktivt val.
+    - **Gammal reps-övning**: `{ name, weight, reps }` utan `seconds` -
+      fungerar som förut, men räknas inte som ett val av läge.
   - `pace` är `null` för `"strength"`. För övriga typer är det ett tal:
     tempo i **min/km** för löpning/promenad/crosstrainer, eller
     snitthastighet i **km/h** för cykling (se `PACE_UNIT_BY_TYPE` i
